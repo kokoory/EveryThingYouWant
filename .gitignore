@@ -1,0 +1,36 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+vendor/
+__pycache__/
+*.pyc
+
+# Build
+dist/
+build/
+out/
+*.o
+*.exe
+
+# Logs
+*.log
+npm-debug.log*
+
+# Misc
+*.tmp
+*.bak
