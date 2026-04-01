@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Requirements Graph Manager</title>
-    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+    <script>
+        if (typeof vis === 'undefined') {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"><\/script>');
+        }
+    </script>
     <style>
         :root {
             --bg-primary: #1a1b2e;
@@ -618,11 +623,20 @@
 
         // ── API Helpers ──
         async function api(path, options = {}) {
-            const res = await fetch(API + path, {
-                headers: { 'Content-Type': 'application/json' },
-                ...options,
-            });
-            return res.json();
+            try {
+                const res = await fetch(API + path, {
+                    headers: { 'Content-Type': 'application/json' },
+                    ...options,
+                });
+                if (!res.ok) {
+                    console.error(`API error: ${res.status} ${res.statusText} for ${path}`);
+                    return res.json().catch(() => ({}));
+                }
+                return res.json();
+            } catch (err) {
+                console.error(`Fetch failed for ${path}:`, err);
+                throw err;
+            }
         }
 
         // ── Initialization ──
@@ -641,6 +655,12 @@
 
         // ── Graph Visualization ──
         async function refreshGraph() {
+            if (typeof vis === 'undefined') {
+                console.warn('vis-network not loaded, skipping graph render');
+                document.getElementById('graph-container').innerHTML =
+                    '<p style="color:var(--text-secondary);padding:24px;text-align:center">Graph library loading failed. Check network connection.</p>';
+                return;
+            }
             const data = await api('/api/graph/vis');
             const container = document.getElementById('graph-container');
 
