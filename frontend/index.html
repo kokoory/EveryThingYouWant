@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Requirements Graph Manager</title>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #1a1b2e;
+            --bg-secondary: #232442;
+            --bg-card: #2a2b4a;
+            --text-primary: #e0e0ff;
+            --text-secondary: #a0a0c0;
+            --accent: #6c5ce7;
+            --accent-hover: #7f70f0;
+            --danger: #e74c3c;
+            --success: #2ecc71;
+            --warning: #f39c12;
+            --border: #3a3b5a;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: var(--bg-secondary);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 6px 14px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .btn:hover { background: var(--accent); border-color: var(--accent); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-danger { background: var(--danger); border-color: var(--danger); }
+        .btn-danger:hover { opacity: 0.8; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+        /* Main Layout */
+        .main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .sidebar-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sidebar-tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            font-size: 13px;
+            border-bottom: 2px solid transparent;
+            color: var(--text-secondary);
+            background: none;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+        }
+
+        .sidebar-tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+
+        /* Tree View */
+        .tree-node {
+            padding: 6px 8px;
+            margin: 2px 0;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .tree-node:hover { background: var(--bg-card); }
+        .tree-node.selected { background: var(--accent); color: #fff; }
+
+        .tree-node .toggle {
+            width: 16px;
+            text-align: center;
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+
+        .tree-children { margin-left: 20px; }
+
+        .tree-node .type-badge {
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+
+        .type-requirement { background: #4A90D9; color: #fff; }
+        .type-specification { background: #7B68EE; color: #fff; }
+        .type-test_case { background: #2ECC71; color: #fff; }
+        .type-design { background: #F39C12; color: #fff; }
+        .type-risk { background: #E74C3C; color: #fff; }
+
+        .status-suspect { border-left: 3px solid var(--danger); }
+
+        /* Content Area */
+        .content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .content-tabs {
+            display: flex;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 0 12px;
+        }
+
+        .content-tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 13px;
+            border-bottom: 2px solid transparent;
+            color: var(--text-secondary);
+            background: none;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+        }
+
+        .content-tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .content-view {
+            flex: 1;
+            display: none;
+            overflow: hidden;
+        }
+
+        .content-view.active { display: flex; flex-direction: column; }
+
+        /* Graph View */
+        #graph-container {
+            flex: 1;
+            background: var(--bg-primary);
+        }
+
+        /* Table View */
+        .table-container {
+            flex: 1;
+            overflow: auto;
+            padding: 16px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+
+        tr:hover { background: var(--bg-card); }
+
+        /* Detail Panel */
+        .detail-panel {
+            width: 360px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border);
+            display: none;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .detail-panel.open { display: flex; }
+
+        .detail-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .detail-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .detail-field {
+            margin-bottom: 16px;
+        }
+
+        .detail-field label {
+            display: block;
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .detail-field .value {
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .detail-field input,
+        .detail-field textarea,
+        .detail-field select {
+            width: 100%;
+            padding: 8px 10px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
+        .detail-field textarea { min-height: 80px; resize: vertical; }
+
+        /* Stats Bar */
+        .stats-bar {
+            background: var(--bg-secondary);
+            padding: 8px 24px;
+            display: flex;
+            gap: 24px;
+            border-top: 1px solid var(--border);
+            font-size: 12px;
+            color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+
+        .stats-bar .stat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stats-bar .stat-value {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .suspect-badge {
+            color: var(--danger);
+            font-weight: 600;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.open { display: flex; }
+
+        .modal {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+        }
+
+        .modal-body { padding: 20px; }
+
+        .modal-footer {
+            padding: 12px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .form-group { margin-bottom: 16px; }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 8px 10px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
+        .form-group textarea { min-height: 80px; resize: vertical; }
+
+        /* Impact list */
+        .impact-list { list-style: none; }
+
+        .impact-list li {
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 4px;
+            background: var(--bg-card);
+            font-size: 13px;
+        }
+
+        .impact-list li .depth { color: var(--warning); font-weight: 600; }
+
+        /* Links section */
+        .link-item {
+            padding: 8px;
+            margin: 4px 0;
+            background: var(--bg-card);
+            border-radius: 4px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .link-item.suspect { border-left: 3px solid var(--danger); }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <h1>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6c5ce7" stroke-width="2">
+                <circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/>
+                <line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/>
+            </svg>
+            Requirements Graph Manager
+        </h1>
+        <div class="header-actions">
+            <button class="btn" onclick="loadDemoData()">Demo Data</button>
+            <button class="btn btn-primary" onclick="openModal('node')">+ Node</button>
+            <button class="btn" onclick="openModal('link')">+ Link</button>
+            <button class="btn" onclick="openModal('baseline')">Baseline</button>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="main">
+        <!-- Sidebar: Tree View -->
+        <div class="sidebar">
+            <div class="sidebar-tabs">
+                <button class="sidebar-tab active" onclick="switchSidebar('tree')">Tree</button>
+                <button class="sidebar-tab" onclick="switchSidebar('suspects')">Suspects</button>
+                <button class="sidebar-tab" onclick="switchSidebar('baselines')">Baselines</button>
+            </div>
+            <div class="sidebar-content" id="sidebar-content"></div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="content">
+            <div class="content-tabs">
+                <button class="content-tab active" onclick="switchView('graph')">Graph View</button>
+                <button class="content-tab" onclick="switchView('table')">Table View</button>
+            </div>
+            <div class="content-view active" id="view-graph">
+                <div id="graph-container"></div>
+            </div>
+            <div class="content-view" id="view-table">
+                <div class="table-container">
+                    <table id="node-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Title</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Priority</th>
+                                <th>Module</th>
+                                <th>Ver</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detail Panel -->
+        <div class="detail-panel" id="detail-panel">
+            <div class="detail-header">
+                <span id="detail-title">Details</span>
+                <div>
+                    <button class="btn btn-sm" onclick="openEditMode()">Edit</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteSelectedNode()">Delete</button>
+                    <button class="btn btn-sm" onclick="closeDetail()">&times;</button>
+                </div>
+            </div>
+            <div class="detail-body" id="detail-body"></div>
+        </div>
+    </div>
+
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+        <div class="stat">Nodes: <span class="stat-value" id="stat-nodes">0</span></div>
+        <div class="stat">Links: <span class="stat-value" id="stat-links">0</span></div>
+        <div class="stat">Suspects: <span class="stat-value suspect-badge" id="stat-suspects">0</span></div>
+        <div class="stat">Baselines: <span class="stat-value" id="stat-baselines">0</span></div>
+        <div class="stat">Modules: <span class="stat-value" id="stat-modules">0</span></div>
+    </div>
+
+    <!-- Add Node Modal -->
+    <div class="modal-overlay" id="modal-node">
+        <div class="modal">
+            <div class="modal-header">Add Requirement Node</div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>ID (optional)</label>
+                    <input id="node-id" placeholder="Auto-generated if empty">
+                </div>
+                <div class="form-group">
+                    <label>Title *</label>
+                    <input id="node-title" placeholder="Requirement title">
+                </div>
+                <div class="form-group">
+                    <label>Content *</label>
+                    <textarea id="node-content" placeholder="Detailed description"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Type</label>
+                    <select id="node-type">
+                        <option value="requirement">Requirement</option>
+                        <option value="specification">Specification</option>
+                        <option value="test_case">Test Case</option>
+                        <option value="design">Design</option>
+                        <option value="risk">Risk</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Priority</label>
+                    <select id="node-priority">
+                        <option value="medium">Medium</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Module</label>
+                    <input id="node-module" placeholder="default" value="default">
+                </div>
+                <div class="form-group">
+                    <label>Author</label>
+                    <input id="node-author" placeholder="Your name">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('node')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitNode()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Link Modal -->
+    <div class="modal-overlay" id="modal-link">
+        <div class="modal">
+            <div class="modal-header">Create Traceability Link</div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Source Node *</label>
+                    <select id="link-source"></select>
+                </div>
+                <div class="form-group">
+                    <label>Target Node *</label>
+                    <select id="link-target"></select>
+                </div>
+                <div class="form-group">
+                    <label>Link Type</label>
+                    <select id="link-type">
+                        <option value="derives_from">Derives From</option>
+                        <option value="satisfies">Satisfies</option>
+                        <option value="verified_by">Verified By</option>
+                        <option value="traces_to">Traces To</option>
+                        <option value="mitigated_by">Mitigated By</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input id="link-desc" placeholder="Link description">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('link')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitLink()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Baseline Modal -->
+    <div class="modal-overlay" id="modal-baseline">
+        <div class="modal">
+            <div class="modal-header">Create Baseline (Snapshot)</div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Baseline Name *</label>
+                    <input id="baseline-name" placeholder="e.g., v1.0-release">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="baseline-desc" placeholder="Baseline description"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('baseline')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitBaseline()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '';
+        let network = null;
+        let allNodes = [];
+        let selectedNodeId = null;
+        let currentSidebar = 'tree';
+
+        // ── API Helpers ──
+        async function api(path, options = {}) {
+            const res = await fetch(API + path, {
+                headers: { 'Content-Type': 'application/json' },
+                ...options,
+            });
+            return res.json();
+        }
+
+        // ── Initialization ──
+        async function init() {
+            await refreshAll();
+        }
+
+        async function refreshAll() {
+            await Promise.all([
+                refreshGraph(),
+                refreshTable(),
+                refreshSidebar(),
+                refreshStats(),
+            ]);
+        }
+
+        // ── Graph Visualization ──
+        async function refreshGraph() {
+            const data = await api('/api/graph/vis');
+            const container = document.getElementById('graph-container');
+
+            const options = {
+                physics: {
+                    solver: 'forceAtlas2Based',
+                    forceAtlas2Based: { gravitationalConstant: -80, springLength: 150 },
+                    stabilization: { iterations: 100 },
+                },
+                interaction: { hover: true, tooltipDelay: 200 },
+                edges: {
+                    font: { size: 10, color: '#a0a0c0', strokeWidth: 0 },
+                    smooth: { type: 'cubicBezier' },
+                },
+                nodes: { margin: 10 },
+            };
+
+            if (network) {
+                network.setData({
+                    nodes: new vis.DataSet(data.nodes),
+                    edges: new vis.DataSet(data.edges),
+                });
+            } else {
+                network = new vis.Network(container, {
+                    nodes: new vis.DataSet(data.nodes),
+                    edges: new vis.DataSet(data.edges),
+                }, options);
+
+                network.on('click', (params) => {
+                    if (params.nodes.length > 0) {
+                        selectNode(params.nodes[0]);
+                    }
+                });
+
+                network.on('doubleClick', (params) => {
+                    if (params.nodes.length > 0) {
+                        showImpactAnalysis(params.nodes[0]);
+                    }
+                });
+            }
+        }
+
+        // ── Table View ──
+        async function refreshTable() {
+            allNodes = await api('/api/nodes');
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = allNodes.map(n => `
+                <tr onclick="selectNode('${n.id}')" style="cursor:pointer" class="${n.status === 'suspect' ? 'status-suspect' : ''}">
+                    <td><strong>${n.id}</strong></td>
+                    <td>${n.title || ''}</td>
+                    <td><span class="type-badge type-${n.node_type}">${n.node_type}</span></td>
+                    <td>${n.status === 'suspect' ? '<span class="suspect-badge">SUSPECT</span>' : n.status}</td>
+                    <td>${n.priority}</td>
+                    <td>${n.module || ''}</td>
+                    <td>v${n.version || 1}</td>
+                </tr>
+            `).join('');
+        }
+
+        // ── Sidebar ──
+        function switchSidebar(tab) {
+            currentSidebar = tab;
+            document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            refreshSidebar();
+        }
+
+        async function refreshSidebar() {
+            const container = document.getElementById('sidebar-content');
+            if (currentSidebar === 'tree') {
+                const tree = await api('/api/tree');
+                container.innerHTML = tree.length > 0
+                    ? tree.map(n => renderTreeNode(n)).join('')
+                    : '<p style="color:var(--text-secondary);padding:12px">No data. Click "Demo Data" to load sample data.</p>';
+            } else if (currentSidebar === 'suspects') {
+                const suspects = await api('/api/suspects/nodes');
+                const suspectLinks = await api('/api/suspects/links');
+                container.innerHTML = `
+                    <h3 style="font-size:14px;margin-bottom:12px">Suspect Nodes (${suspects.length})</h3>
+                    ${suspects.map(n => `
+                        <div class="link-item suspect" onclick="selectNode('${n.id}')" style="cursor:pointer">
+                            <div>
+                                <strong>${n.id}</strong> - ${n.title || ''}
+                                <br><small style="color:var(--text-secondary)">${n.node_type}</small>
+                            </div>
+                            <button class="btn btn-sm" onclick="event.stopPropagation();resolveSuspect('${n.id}')">Resolve</button>
+                        </div>
+                    `).join('') || '<p style="color:var(--text-secondary)">No suspect nodes</p>'}
+                    <h3 style="font-size:14px;margin:16px 0 12px">Suspect Links (${suspectLinks.length})</h3>
+                    ${suspectLinks.map(l => `
+                        <div class="link-item suspect">
+                            <span>${l.source_id} &rarr; ${l.target_id}</span>
+                            <small>${l.link_type}</small>
+                        </div>
+                    `).join('') || '<p style="color:var(--text-secondary)">No suspect links</p>'}
+                `;
+            } else if (currentSidebar === 'baselines') {
+                const baselines = await api('/api/baselines');
+                container.innerHTML = `
+                    <h3 style="font-size:14px;margin-bottom:12px">Baselines (${baselines.length})</h3>
+                    ${baselines.map(b => `
+                        <div class="link-item">
+                            <div>
+                                <strong>${b.name}</strong>
+                                <br><small style="color:var(--text-secondary)">${b.description || ''}</small>
+                                <br><small style="color:var(--text-secondary)">Nodes: ${b.node_count} | Links: ${b.link_count}</small>
+                            </div>
+                            <button class="btn btn-sm" onclick="restoreBaseline('${b.name}')">Restore</button>
+                        </div>
+                    `).join('') || '<p style="color:var(--text-secondary)">No baselines yet</p>'}
+                `;
+            }
+        }
+
+        function renderTreeNode(node) {
+            const hasChildren = node.children && node.children.length > 0;
+            const isSuspect = node.status === 'suspect';
+            return `
+                <div>
+                    <div class="tree-node ${isSuspect ? 'status-suspect' : ''} ${selectedNodeId === node.id ? 'selected' : ''}"
+                         onclick="selectNode('${node.id}')">
+                        <span class="toggle">${hasChildren ? '&#9660;' : '&bull;'}</span>
+                        <span class="type-badge type-${node.node_type}">${node.node_type.substring(0,3).toUpperCase()}</span>
+                        <span>${node.id}</span>
+                        <span style="color:var(--text-secondary);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${node.title}</span>
+                        ${isSuspect ? '<span class="suspect-badge" title="Suspect">!</span>' : ''}
+                    </div>
+                    ${hasChildren ? `<div class="tree-children">${node.children.map(c => renderTreeNode(c)).join('')}</div>` : ''}
+                </div>
+            `;
+        }
+
+        // ── Node Selection & Detail ──
+        async function selectNode(nodeId) {
+            selectedNodeId = nodeId;
+            const node = await api(`/api/nodes/${nodeId}`);
+            const links = await api(`/api/nodes/${nodeId}/links`);
+
+            const panel = document.getElementById('detail-panel');
+            panel.classList.add('open');
+            document.getElementById('detail-title', nodeId);
+
+            document.getElementById('detail-body').innerHTML = `
+                <div class="detail-field">
+                    <label>ID</label>
+                    <div class="value"><strong>${nodeId}</strong></div>
+                </div>
+                <div class="detail-field">
+                    <label>Title</label>
+                    <div class="value">${node.title || '-'}</div>
+                </div>
+                <div class="detail-field">
+                    <label>Content</label>
+                    <div class="value" style="white-space:pre-wrap">${node.content || '-'}</div>
+                </div>
+                <div class="detail-field">
+                    <label>Type</label>
+                    <div class="value"><span class="type-badge type-${node.node_type}">${node.node_type}</span></div>
+                </div>
+                <div class="detail-field">
+                    <label>Status</label>
+                    <div class="value">${node.status === 'suspect' ? '<span class="suspect-badge">SUSPECT</span>' : node.status}
+                        ${node.status === 'suspect' ? `<button class="btn btn-sm" style="margin-left:8px" onclick="resolveSuspect('${nodeId}')">Resolve</button>` : ''}
+                    </div>
+                </div>
+                <div class="detail-field">
+                    <label>Priority</label>
+                    <div class="value">${node.priority}</div>
+                </div>
+                <div class="detail-field">
+                    <label>Version</label>
+                    <div class="value">v${node.version || 1}</div>
+                </div>
+                <div class="detail-field">
+                    <label>Module</label>
+                    <div class="value">${node.module || 'default'}</div>
+                </div>
+                <div class="detail-field">
+                    <label>Incoming Links (${links.incoming.length})</label>
+                    ${links.incoming.map(l => `
+                        <div class="link-item ${l.is_suspect ? 'suspect' : ''}">
+                            <span onclick="selectNode('${l.source_id}')" style="cursor:pointer;text-decoration:underline">${l.source_id}</span>
+                            <small>${l.link_type} ${l.is_suspect ? '⚠' : ''}</small>
+                        </div>
+                    `).join('') || '<div style="color:var(--text-secondary);font-size:12px">None</div>'}
+                </div>
+                <div class="detail-field">
+                    <label>Outgoing Links (${links.outgoing.length})</label>
+                    ${links.outgoing.map(l => `
+                        <div class="link-item ${l.is_suspect ? 'suspect' : ''}">
+                            <span onclick="selectNode('${l.target_id}')" style="cursor:pointer;text-decoration:underline">${l.target_id}</span>
+                            <small>${l.link_type} ${l.is_suspect ? '⚠' : ''}</small>
+                        </div>
+                    `).join('') || '<div style="color:var(--text-secondary);font-size:12px">None</div>'}
+                </div>
+                <div class="detail-field">
+                    <label>Impact Analysis</label>
+                    <button class="btn btn-sm" onclick="showImpactAnalysis('${nodeId}')">Analyze Impact</button>
+                    <div id="impact-result"></div>
+                </div>
+            `;
+
+            // Highlight in graph
+            if (network) {
+                network.selectNodes([nodeId]);
+            }
+
+            refreshSidebar();
+        }
+
+        async function showImpactAnalysis(nodeId) {
+            const result = await api(`/api/impact/${nodeId}`);
+            const container = document.getElementById('impact-result') || document.getElementById('detail-body');
+
+            let html = `<ul class="impact-list" style="margin-top:8px">`;
+            if (result.affected_nodes.length === 0) {
+                html += `<li>No downstream impact found.</li>`;
+            } else {
+                result.affected_nodes.forEach(n => {
+                    html += `<li onclick="selectNode('${n.id}')" style="cursor:pointer">
+                        <span class="depth">Depth ${n.depth}</span> -
+                        <strong>${n.id}</strong> ${n.title || ''}
+                        <span class="type-badge type-${n.node_type}" style="margin-left:4px">${n.node_type}</span>
+                    </li>`;
+                });
+            }
+            html += `</ul>`;
+
+            const impactEl = document.getElementById('impact-result');
+            if (impactEl) impactEl.innerHTML = html;
+        }
+
+        function openEditMode() {
+            if (!selectedNodeId) return;
+            const node = allNodes.find(n => n.id === selectedNodeId);
+            if (!node) return;
+
+            document.getElementById('detail-body').innerHTML = `
+                <div class="detail-field">
+                    <label>ID</label>
+                    <div class="value"><strong>${selectedNodeId}</strong></div>
+                </div>
+                <div class="detail-field">
+                    <label>Title</label>
+                    <input id="edit-title" value="${node.title || ''}">
+                </div>
+                <div class="detail-field">
+                    <label>Content</label>
+                    <textarea id="edit-content">${node.content || ''}</textarea>
+                </div>
+                <div class="detail-field">
+                    <label>Priority</label>
+                    <select id="edit-priority">
+                        ${['critical','high','medium','low'].map(p =>
+                            `<option value="${p}" ${node.priority === p ? 'selected' : ''}>${p}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div class="detail-field">
+                    <label>Status</label>
+                    <select id="edit-status">
+                        ${['draft','review','approved'].map(s =>
+                            `<option value="${s}" ${node.status === s ? 'selected' : ''}>${s}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:16px">
+                    <button class="btn btn-primary" onclick="saveEdit()">Save</button>
+                    <button class="btn" onclick="selectNode('${selectedNodeId}')">Cancel</button>
+                </div>
+            `;
+        }
+
+        async function saveEdit() {
+            const update = {
+                title: document.getElementById('edit-title').value,
+                content: document.getElementById('edit-content').value,
+                priority: document.getElementById('edit-priority').value,
+                status: document.getElementById('edit-status').value,
+            };
+            await api(`/api/nodes/${selectedNodeId}`, {
+                method: 'PUT',
+                body: JSON.stringify(update),
+            });
+            await refreshAll();
+            selectNode(selectedNodeId);
+        }
+
+        async function deleteSelectedNode() {
+            if (!selectedNodeId || !confirm(`Delete ${selectedNodeId}?`)) return;
+            await api(`/api/nodes/${selectedNodeId}`, { method: 'DELETE' });
+            closeDetail();
+            selectedNodeId = null;
+            await refreshAll();
+        }
+
+        async function resolveSuspect(nodeId) {
+            await api(`/api/suspects/${nodeId}/resolve`, { method: 'POST' });
+            await refreshAll();
+            if (selectedNodeId === nodeId) selectNode(nodeId);
+        }
+
+        function closeDetail() {
+            document.getElementById('detail-panel').classList.remove('open');
+            selectedNodeId = null;
+        }
+
+        // ── View Switching ──
+        function switchView(view) {
+            document.querySelectorAll('.content-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.content-view').forEach(v => v.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(`view-${view}`).classList.add('active');
+            if (view === 'graph' && network) network.fit();
+        }
+
+        // ── Modal Management ──
+        function openModal(type) {
+            document.getElementById(`modal-${type}`).classList.add('open');
+            if (type === 'link') populateLinkSelects();
+        }
+
+        function closeModal(type) {
+            document.getElementById(`modal-${type}`).classList.remove('open');
+        }
+
+        function populateLinkSelects() {
+            const options = allNodes.map(n => `<option value="${n.id}">${n.id} - ${n.title || ''}</option>`).join('');
+            document.getElementById('link-source').innerHTML = options;
+            document.getElementById('link-target').innerHTML = options;
+        }
+
+        // ── Form Submissions ──
+        async function submitNode() {
+            const data = {
+                title: document.getElementById('node-title').value,
+                content: document.getElementById('node-content').value,
+                node_type: document.getElementById('node-type').value,
+                priority: document.getElementById('node-priority').value,
+                module: document.getElementById('node-module').value || 'default',
+                author: document.getElementById('node-author').value,
+            };
+            const id = document.getElementById('node-id').value;
+            if (id) data.id = id;
+            if (!data.title || !data.content) return alert('Title and Content are required.');
+
+            await api('/api/nodes', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('node');
+            // Clear form
+            ['node-id', 'node-title', 'node-content', 'node-author'].forEach(id => document.getElementById(id).value = '');
+            await refreshAll();
+        }
+
+        async function submitLink() {
+            const data = {
+                source_id: document.getElementById('link-source').value,
+                target_id: document.getElementById('link-target').value,
+                link_type: document.getElementById('link-type').value,
+                description: document.getElementById('link-desc').value,
+            };
+            if (data.source_id === data.target_id) return alert('Source and target must be different.');
+            await api('/api/links', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('link');
+            document.getElementById('link-desc').value = '';
+            await refreshAll();
+        }
+
+        async function submitBaseline() {
+            const data = {
+                name: document.getElementById('baseline-name').value,
+                description: document.getElementById('baseline-desc').value,
+            };
+            if (!data.name) return alert('Baseline name is required.');
+            await api('/api/baselines', { method: 'POST', body: JSON.stringify(data) });
+            closeModal('baseline');
+            document.getElementById('baseline-name').value = '';
+            document.getElementById('baseline-desc').value = '';
+            await refreshAll();
+        }
+
+        async function restoreBaseline(name) {
+            if (!confirm(`Restore baseline "${name}"? Current state will be overwritten.`)) return;
+            await api(`/api/baselines/${name}/restore`, { method: 'POST' });
+            await refreshAll();
+        }
+
+        // ── Demo Data ──
+        async function loadDemoData() {
+            const result = await api('/api/demo/load', { method: 'POST' });
+            if (result.status === 'skipped') {
+                alert(result.message);
+            }
+            await refreshAll();
+        }
+
+        // ── Stats ──
+        async function refreshStats() {
+            const stats = await api('/api/stats');
+            document.getElementById('stat-nodes').textContent = stats.total_nodes;
+            document.getElementById('stat-links').textContent = stats.total_links;
+            document.getElementById('stat-suspects').textContent = stats.suspect_links;
+            document.getElementById('stat-baselines').textContent = stats.baselines;
+            document.getElementById('stat-modules').textContent = stats.modules?.length || 0;
+        }
+
+        // ── Start ──
+        init();
+    </script>
+</body>
+</html>
