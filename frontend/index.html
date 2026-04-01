@@ -823,16 +823,19 @@
         }
 
         function renderTreeNode(node) {
+            if (!node || !node.id) return '';
             const hasChildren = node.children && node.children.length > 0;
             const isSuspect = node.status === 'suspect';
+            const nodeType = node.node_type || 'unknown';
+            const badge = nodeType.substring(0, 3).toUpperCase();
             return `
                 <div>
                     <div class="tree-node ${isSuspect ? 'status-suspect' : ''} ${selectedNodeId === node.id ? 'selected' : ''}"
                          onclick="selectNode('${node.id}')">
                         <span class="toggle">${hasChildren ? '&#9660;' : '&bull;'}</span>
-                        <span class="type-badge type-${node.node_type}">${node.node_type.substring(0,3).toUpperCase()}</span>
+                        <span class="type-badge type-${nodeType}">${badge}</span>
                         <span>${node.id}</span>
-                        <span style="color:var(--text-secondary);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${node.title}</span>
+                        <span style="color:var(--text-secondary);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${node.title || ''}</span>
                         ${isSuspect ? '<span class="suspect-badge" title="Suspect">!</span>' : ''}
                     </div>
                     ${hasChildren ? `<div class="tree-children">${node.children.map(c => renderTreeNode(c)).join('')}</div>` : ''}
