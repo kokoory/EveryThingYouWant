@@ -183,13 +183,24 @@ class GraphEngine:
                 self.graph.nodes[successor]["status"] = NodeStatus.SUSPECT.value
 
     def resolve_suspect(self, node_id: str) -> Optional[dict]:
-        """Resolve suspect status on a node and its incoming links."""
+        """Resolve suspect status on a node and ALL its connected suspect links."""
         if node_id not in self.graph.nodes:
             return None
         self.graph.nodes[node_id]["status"] = NodeStatus.APPROVED.value
+        # Clear incoming suspect links
         for pred, _ in self.graph.in_edges(node_id):
             self.graph.edges[pred, node_id]["is_suspect"] = False
+        # Clear outgoing suspect links too
+        for _, succ in self.graph.out_edges(node_id):
+            self.graph.edges[node_id, succ]["is_suspect"] = False
         return dict(self.graph.nodes[node_id])
+
+    def resolve_suspect_link(self, source_id: str, target_id: str) -> bool:
+        """Resolve a specific suspect link."""
+        if not self.graph.has_edge(source_id, target_id):
+            return False
+        self.graph.edges[source_id, target_id]["is_suspect"] = False
+        return True
 
     def get_suspect_nodes(self) -> list[dict]:
         """Get all nodes currently in suspect status."""

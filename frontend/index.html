@@ -828,8 +828,11 @@
                         <h3 style="font-size:14px;margin:16px 0 12px">Suspect Links (${suspectLinks.length})</h3>
                         ${suspectLinks.map(l => `
                             <div class="link-item suspect">
-                                <span>${l.source_id} &rarr; ${l.target_id}</span>
-                                <small>${l.link_type}</small>
+                                <div>
+                                    <span>${l.source_id} &rarr; ${l.target_id}</span>
+                                    <br><small style="color:var(--text-secondary)">${l.link_type}</small>
+                                </div>
+                                <button class="btn btn-sm" onclick="resolveSuspectLink('${l.source_id}','${l.target_id}')">Resolve</button>
                             </div>
                         `).join('') || '<p style="color:var(--text-secondary)">No suspect links</p>'}
                     `;
@@ -1084,6 +1087,11 @@
             await api(`/api/suspects/${nodeId}/resolve`, { method: 'POST' });
             await refreshAll();
             if (selectedNodeId === nodeId) selectNode(nodeId);
+        }
+
+        async function resolveSuspectLink(sourceId, targetId) {
+            await api(`/api/suspects/link/resolve?source_id=${encodeURIComponent(sourceId)}&target_id=${encodeURIComponent(targetId)}`, { method: 'POST' });
+            await refreshAll();
         }
 
         function closeDetail() {

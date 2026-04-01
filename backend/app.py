@@ -132,6 +132,14 @@ async def get_suspect_links():
     return engine.get_suspect_links()
 
 
+@app.post("/api/suspects/link/resolve")
+async def resolve_suspect_link(source_id: str, target_id: str):
+    if not engine.resolve_suspect_link(source_id, target_id):
+        raise HTTPException(status_code=404, detail="Link not found")
+    engine.save()
+    return {"status": "resolved", "source_id": source_id, "target_id": target_id}
+
+
 @app.post("/api/suspects/{node_id}/resolve")
 async def resolve_suspect(node_id: str):
     result = engine.resolve_suspect(node_id)
