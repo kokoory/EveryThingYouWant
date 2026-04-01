@@ -31,6 +31,9 @@ out/
 *.log
 npm-debug.log*
 
+# Data (runtime generated)
+data/
+
 # Misc
 *.tmp
 *.bak
