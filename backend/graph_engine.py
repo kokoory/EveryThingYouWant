@@ -78,13 +78,30 @@ class GraphEngine:
             return old_data
 
         for key, value in changes.items():
-            if isinstance(value, (NodeStatus, Priority)):
+            if isinstance(value, (NodeStatus, Priority, NodeType)):
                 self.graph.nodes[node_id][key] = value.value
             else:
                 self.graph.nodes[node_id][key] = value
 
-        self.graph.nodes[node_id]["updated_at"] = datetime.now().isoformat()
-        self.graph.nodes[node_id]["version"] = old_data.get("version", 1) + 1
+        now = datetime.now().isoformat()
+        new_version = old_data.get("version", 1) + 1
+        self.graph.nodes[node_id]["updated_at"] = now
+        self.graph.nodes[node_id]["version"] = new_version
+
+        # Version history logging
+        version_history = self.graph.nodes[node_id].get("version_history", [])
+        changed_fields = {}
+        for key in changes:
+            old_val = old_data.get(key)
+            new_val = self.graph.nodes[node_id].get(key)
+            if old_val != new_val:
+                changed_fields[key] = {"old": old_val, "new": new_val}
+        version_history.append({
+            "version": new_version,
+            "date": now,
+            "changes": changed_fields,
+        })
+        self.graph.nodes[node_id]["version_history"] = version_history
 
         # Suspect link propagation
         self._propagate_suspect(node_id)

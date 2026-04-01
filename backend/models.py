@@ -82,6 +82,7 @@ class CreateNodeRequest(BaseModel):
 class UpdateNodeRequest(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
+    node_type: Optional[NodeType] = None
     priority: Optional[Priority] = None
     status: Optional[NodeStatus] = None
     tags: Optional[list[str]] = None

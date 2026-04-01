@@ -476,6 +476,7 @@
                                 <th>Priority</th>
                                 <th>Subsystem</th>
                                 <th>Ver</th>
+                                <th>Updated</th>
                             </tr>
                         </thead>
                         <tbody id="table-body"></tbody>
@@ -769,6 +770,7 @@
                     <td>${n.priority}</td>
                     <td>${n.subsystem || ''}</td>
                     <td>v${n.version || 1}</td>
+                    <td style="font-size:11px;color:var(--text-secondary)">${n.updated_at ? new Date(n.updated_at).toLocaleString('ko-KR') : '-'}</td>
                 </tr>
             `).join('');
         }
@@ -920,12 +922,26 @@
                 </div>
                 <div class="detail-field">
                     <label>Version</label>
-                    <div class="value">v${node.version || 1}</div>
+                    <div class="value">v${node.version || 1} <small style="color:var(--text-secondary)">(${node.updated_at ? new Date(node.updated_at).toLocaleString('ko-KR') : '-'})</small></div>
                 </div>
                 <div class="detail-field">
                     <label>Subsystem</label>
                     <div class="value">${node.subsystem || 'SS'}</div>
                 </div>
+                ${(node.version_history && node.version_history.length > 0) ? `
+                <div class="detail-field">
+                    <label>Version History</label>
+                    ${node.version_history.slice().reverse().map(vh => `
+                        <div class="link-item" style="flex-direction:column;align-items:flex-start;margin:4px 0">
+                            <div><strong>v${vh.version}</strong> <small style="color:var(--text-secondary)">${new Date(vh.date).toLocaleString('ko-KR')}</small></div>
+                            <div style="font-size:11px;margin-top:4px">
+                                ${Object.entries(vh.changes).map(([k,v]) =>
+                                    `<div><span style="color:var(--text-secondary)">${k}:</span> <span style="color:var(--danger);text-decoration:line-through">${v.old || '(empty)'}</span> → <span style="color:var(--success)">${v.new || '(empty)'}</span></div>`
+                                ).join('')}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>` : ''}
                 <div class="detail-field">
                     <label>Incoming Links (${links.incoming.length})</label>
                     ${links.incoming.map(l => `
@@ -986,6 +1002,7 @@
             const node = allNodes.find(n => n.id === selectedNodeId);
             if (!node) return;
 
+            const types = ['requirement','specification','test_case','design','risk'];
             document.getElementById('detail-body').innerHTML = `
                 <div class="detail-field">
                     <label>ID</label>
@@ -998,6 +1015,14 @@
                 <div class="detail-field">
                     <label>Content</label>
                     <textarea id="edit-content">${node.content || ''}</textarea>
+                </div>
+                <div class="detail-field">
+                    <label>Type</label>
+                    <select id="edit-type">
+                        ${types.map(t =>
+                            `<option value="${t}" ${node.node_type === t ? 'selected' : ''}>${t}</option>`
+                        ).join('')}
+                    </select>
                 </div>
                 <div class="detail-field">
                     <label>Priority</label>
@@ -1015,6 +1040,14 @@
                         ).join('')}
                     </select>
                 </div>
+                <div class="detail-field">
+                    <label>Subsystem</label>
+                    <select id="edit-subsystem">
+                        ${subsystemList.map(s =>
+                            `<option value="${s}" ${(node.subsystem || 'SS') === s ? 'selected' : ''}>${s}</option>`
+                        ).join('')}
+                    </select>
+                </div>
                 <div style="display:flex;gap:8px;margin-top:16px">
                     <button class="btn btn-primary" onclick="saveEdit()">Save</button>
                     <button class="btn" onclick="selectNode('${selectedNodeId}')">Cancel</button>
@@ -1026,8 +1059,10 @@
             const update = {
                 title: document.getElementById('edit-title').value,
                 content: document.getElementById('edit-content').value,
+                node_type: document.getElementById('edit-type').value,
                 priority: document.getElementById('edit-priority').value,
                 status: document.getElementById('edit-status').value,
+                subsystem: document.getElementById('edit-subsystem').value,
             };
             await api(`/api/nodes/${selectedNodeId}`, {
                 method: 'PUT',
