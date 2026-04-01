@@ -439,6 +439,7 @@
             <button class="btn btn-primary" onclick="openModal('node')">+ Node</button>
             <button class="btn" onclick="openModal('link')">+ Link</button>
             <button class="btn" onclick="openModal('baseline')">Baseline</button>
+            <button class="btn" onclick="openCompareModal()">Compare</button>
         </div>
     </div>
 
@@ -473,7 +474,7 @@
                                 <th>Type</th>
                                 <th>Status</th>
                                 <th>Priority</th>
-                                <th>Module</th>
+                                <th>Subsystem</th>
                                 <th>Ver</th>
                             </tr>
                         </thead>
@@ -503,7 +504,7 @@
         <div class="stat">Links: <span class="stat-value" id="stat-links">0</span></div>
         <div class="stat">Suspects: <span class="stat-value suspect-badge" id="stat-suspects">0</span></div>
         <div class="stat">Baselines: <span class="stat-value" id="stat-baselines">0</span></div>
-        <div class="stat">Modules: <span class="stat-value" id="stat-modules">0</span></div>
+        <div class="stat">Subsystems: <span class="stat-value" id="stat-subsystems">0</span></div>
     </div>
 
     <!-- Add Node Modal -->
@@ -543,8 +544,8 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Module</label>
-                    <input id="node-module" placeholder="default" value="default">
+                    <label>Subsystem</label>
+                    <select id="node-subsystem"></select>
                 </div>
                 <div class="form-group">
                     <label>Author</label>
@@ -614,9 +615,36 @@
         </div>
     </div>
 
+    <!-- Baseline Compare Modal -->
+    <div class="modal-overlay" id="modal-compare">
+        <div class="modal" style="width:650px">
+            <div class="modal-header">Baseline Comparison</div>
+            <div class="modal-body">
+                <div style="display:flex;gap:12px;margin-bottom:16px">
+                    <div class="form-group" style="flex:1">
+                        <label>Baseline A</label>
+                        <select id="compare-a"></select>
+                    </div>
+                    <div class="form-group" style="flex:1">
+                        <label>Baseline B</label>
+                        <select id="compare-b"></select>
+                    </div>
+                    <div style="display:flex;align-items:flex-end">
+                        <button class="btn btn-primary" onclick="runCompare()">Compare</button>
+                    </div>
+                </div>
+                <div id="compare-result"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('compare')">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API = '';
         let network = null;
+        let subsystemList = ['SS', 'GCS', 'DLS', 'AVS'];
         let allNodes = [];
         let selectedNodeId = null;
         let currentSidebar = 'tree';
@@ -641,6 +669,16 @@
 
         // ── Initialization ──
         async function init() {
+            // Load subsystem list from server
+            try {
+                const subs = await api('/api/subsystems');
+                if (Array.isArray(subs) && subs.length > 0) subsystemList = subs;
+            } catch(e) {}
+            // Populate subsystem dropdown
+            const subSelect = document.getElementById('node-subsystem');
+            if (subSelect) {
+                subSelect.innerHTML = subsystemList.map(s => `<option value="${s}">${s}</option>`).join('');
+            }
             await refreshAll();
         }
 
@@ -729,7 +767,7 @@
                     <td><span class="type-badge type-${n.node_type}">${n.node_type}</span></td>
                     <td>${n.status === 'suspect' ? '<span class="suspect-badge">SUSPECT</span>' : n.status}</td>
                     <td>${n.priority}</td>
-                    <td>${n.module || ''}</td>
+                    <td>${n.subsystem || ''}</td>
                     <td>v${n.version || 1}</td>
                 </tr>
             `).join('');
@@ -885,8 +923,8 @@
                     <div class="value">v${node.version || 1}</div>
                 </div>
                 <div class="detail-field">
-                    <label>Module</label>
-                    <div class="value">${node.module || 'default'}</div>
+                    <label>Subsystem</label>
+                    <div class="value">${node.subsystem || 'SS'}</div>
                 </div>
                 <div class="detail-field">
                     <label>Incoming Links (${links.incoming.length})</label>
@@ -1055,7 +1093,7 @@
                 content: document.getElementById('node-content').value,
                 node_type: document.getElementById('node-type').value,
                 priority: document.getElementById('node-priority').value,
-                module: document.getElementById('node-module').value || 'default',
+                subsystem: document.getElementById('node-subsystem').value || 'SS',
                 author: document.getElementById('node-author').value,
             };
             const id = document.getElementById('node-id').value;
@@ -1123,7 +1161,90 @@
             document.getElementById('stat-links').textContent = stats.total_links;
             document.getElementById('stat-suspects').textContent = stats.suspect_links;
             document.getElementById('stat-baselines').textContent = stats.baselines;
-            document.getElementById('stat-modules').textContent = stats.modules?.length || 0;
+            document.getElementById('stat-subsystems').textContent = stats.subsystems?.length || 0;
+        }
+
+        // ── Baseline Compare ──
+        async function openCompareModal() {
+            const baselines = await api('/api/baselines');
+            if (baselines.length < 2) {
+                alert('비교하려면 최소 2개의 베이스라인이 필요합니다.');
+                return;
+            }
+            const opts = baselines.map(b => `<option value="${b.name}">${b.name} (${b.node_count} nodes)</option>`).join('');
+            document.getElementById('compare-a').innerHTML = opts;
+            document.getElementById('compare-b').innerHTML = opts;
+            if (baselines.length >= 2) {
+                document.getElementById('compare-b').selectedIndex = 1;
+            }
+            document.getElementById('compare-result').innerHTML = '';
+            openModal('compare');
+        }
+
+        async function runCompare() {
+            const a = document.getElementById('compare-a').value;
+            const b = document.getElementById('compare-b').value;
+            if (a === b) { alert('서로 다른 베이스라인을 선택하세요.'); return; }
+
+            const result = await api(`/api/baselines/compare?name1=${encodeURIComponent(a)}&name2=${encodeURIComponent(b)}`);
+            const container = document.getElementById('compare-result');
+
+            let html = `
+                <div style="display:flex;gap:16px;margin-bottom:16px">
+                    <div style="flex:1;padding:12px;background:var(--bg-card);border-radius:6px;text-align:center">
+                        <div style="font-size:24px;color:var(--success);font-weight:700">${result.summary.added}</div>
+                        <div style="font-size:12px;color:var(--text-secondary)">Added</div>
+                    </div>
+                    <div style="flex:1;padding:12px;background:var(--bg-card);border-radius:6px;text-align:center">
+                        <div style="font-size:24px;color:var(--danger);font-weight:700">${result.summary.removed}</div>
+                        <div style="font-size:12px;color:var(--text-secondary)">Removed</div>
+                    </div>
+                    <div style="flex:1;padding:12px;background:var(--bg-card);border-radius:6px;text-align:center">
+                        <div style="font-size:24px;color:var(--warning);font-weight:700">${result.summary.modified}</div>
+                        <div style="font-size:12px;color:var(--text-secondary)">Modified</div>
+                    </div>
+                </div>
+            `;
+
+            if (result.added_nodes.length > 0) {
+                html += `<h4 style="color:var(--success);margin:12px 0 8px">+ Added Nodes</h4>`;
+                result.added_nodes.forEach(n => {
+                    html += `<div class="link-item" style="border-left:3px solid var(--success)">
+                        <strong>${n.id}</strong> - ${n.title || ''} <small style="color:var(--text-secondary)">[${n.subsystem || ''}]</small>
+                    </div>`;
+                });
+            }
+
+            if (result.removed_nodes.length > 0) {
+                html += `<h4 style="color:var(--danger);margin:12px 0 8px">- Removed Nodes</h4>`;
+                result.removed_nodes.forEach(n => {
+                    html += `<div class="link-item" style="border-left:3px solid var(--danger)">
+                        <strong>${n.id}</strong> - ${n.title || ''} <small style="color:var(--text-secondary)">[${n.subsystem || ''}]</small>
+                    </div>`;
+                });
+            }
+
+            if (result.modified_nodes.length > 0) {
+                html += `<h4 style="color:var(--warning);margin:12px 0 8px">~ Modified Nodes</h4>`;
+                result.modified_nodes.forEach(n => {
+                    html += `<div class="link-item" style="border-left:3px solid var(--warning)">
+                        <div><strong>${n.id}</strong> - ${n.title || ''}</div>
+                        <div style="margin-top:6px;font-size:11px">`;
+                    for (const [key, diff] of Object.entries(n.changes)) {
+                        if (key === 'updated_at' || key === 'created_at') continue;
+                        html += `<div style="margin:2px 0"><span style="color:var(--text-secondary)">${key}:</span>
+                            <span style="color:var(--danger);text-decoration:line-through">${diff.old || '(empty)'}</span>
+                            → <span style="color:var(--success)">${diff.new || '(empty)'}</span></div>`;
+                    }
+                    html += `</div></div>`;
+                });
+            }
+
+            if (result.summary.added === 0 && result.summary.removed === 0 && result.summary.modified === 0) {
+                html += `<p style="color:var(--text-secondary);text-align:center;padding:20px">변경사항이 없습니다.</p>`;
+            }
+
+            container.innerHTML = html;
         }
 
         // ── Start ──

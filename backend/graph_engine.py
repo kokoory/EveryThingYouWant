@@ -23,8 +23,11 @@ from .models import (
     Priority,
     RequirementLink,
     RequirementNode,
+    Subsystem,
     UpdateNodeRequest,
 )
+
+SUBSYSTEM_LIST = [s.value for s in Subsystem]
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -52,7 +55,7 @@ class GraphEngine:
             priority=req.priority,
             author=req.author,
             tags=req.tags,
-            module=req.module,
+            subsystem=req.subsystem,
             created_at=now,
             updated_at=now,
         )
@@ -97,10 +100,10 @@ class GraphEngine:
         self._record_change("delete_node", node_id, old_data, None)
         return True
 
-    def get_all_nodes(self, module: Optional[str] = None, node_type: Optional[str] = None) -> list[dict]:
+    def get_all_nodes(self, subsystem: Optional[str] = None, node_type: Optional[str] = None) -> list[dict]:
         nodes = []
         for nid, data in self.graph.nodes(data=True):
-            if module and data.get("module") != module:
+            if subsystem and data.get("subsystem") != subsystem:
                 continue
             if node_type and data.get("node_type") != node_type:
                 continue
@@ -269,7 +272,7 @@ class GraphEngine:
         return True
 
     def compare_baselines(self, name1: str, name2: str) -> dict:
-        """Compare two baselines and return differences."""
+        """Compare two baselines and return detailed differences."""
         if name1 not in self.baselines or name2 not in self.baselines:
             return {"error": "Baseline not found"}
 
@@ -278,17 +281,36 @@ class GraphEngine:
         nodes1 = set(snap1["nodes"].keys())
         nodes2 = set(snap2["nodes"].keys())
 
-        added_nodes = list(nodes2 - nodes1)
-        removed_nodes = list(nodes1 - nodes2)
-        common_nodes = nodes1 & nodes2
+        added_nodes = [
+            {"id": nid, **snap2["nodes"][nid]}
+            for nid in sorted(nodes2 - nodes1)
+        ]
+        removed_nodes = [
+            {"id": nid, **snap1["nodes"][nid]}
+            for nid in sorted(nodes1 - nodes2)
+        ]
+
         modified_nodes = []
-        for nid in common_nodes:
-            if snap1["nodes"][nid] != snap2["nodes"][nid]:
-                modified_nodes.append(nid)
+        for nid in sorted(nodes1 & nodes2):
+            n1 = snap1["nodes"][nid]
+            n2 = snap2["nodes"][nid]
+            if n1 != n2:
+                changes = {}
+                for key in set(list(n1.keys()) + list(n2.keys())):
+                    v1 = n1.get(key)
+                    v2 = n2.get(key)
+                    if v1 != v2:
+                        changes[key] = {"old": v1, "new": v2}
+                modified_nodes.append({"id": nid, "title": n2.get("title", ""), "changes": changes})
 
         return {
             "baseline1": name1,
             "baseline2": name2,
+            "summary": {
+                "added": len(added_nodes),
+                "removed": len(removed_nodes),
+                "modified": len(modified_nodes),
+            },
             "added_nodes": added_nodes,
             "removed_nodes": removed_nodes,
             "modified_nodes": modified_nodes,
@@ -330,13 +352,16 @@ class GraphEngine:
             "children": children,
         }
 
-    # ── Module Operations ──
+    # ── Subsystem Operations ──
 
-    def get_modules(self) -> list[str]:
-        modules = set()
+    def get_subsystems(self) -> list[str]:
+        return SUBSYSTEM_LIST
+
+    def get_used_subsystems(self) -> list[str]:
+        used = set()
         for _, data in self.graph.nodes(data=True):
-            modules.add(data.get("module", "default"))
-        return sorted(modules)
+            used.add(data.get("subsystem", "SS"))
+        return sorted(used)
 
     # ── Statistics ──
 
@@ -356,7 +381,7 @@ class GraphEngine:
             "type_counts": type_counts,
             "status_counts": status_counts,
             "suspect_links": suspect_links,
-            "modules": self.get_modules(),
+            "subsystems": self.get_used_subsystems(),
             "baselines": len(self.baselines),
         }
 

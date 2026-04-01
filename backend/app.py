@@ -55,8 +55,8 @@ async def serve_frontend():
 # ── Node Endpoints ──
 
 @app.get("/api/nodes")
-async def list_nodes(module: Optional[str] = None, node_type: Optional[str] = None):
-    return engine.get_all_nodes(module=module, node_type=node_type)
+async def list_nodes(subsystem: Optional[str] = None, node_type: Optional[str] = None):
+    return engine.get_all_nodes(subsystem=subsystem, node_type=node_type)
 
 
 @app.post("/api/nodes")
@@ -188,11 +188,11 @@ async def get_tree_view(root_id: Optional[str] = None):
     return engine.get_tree_view(root_id=root_id)
 
 
-# ── Modules ──
+# ── Subsystems ──
 
-@app.get("/api/modules")
-async def get_modules():
-    return engine.get_modules()
+@app.get("/api/subsystems")
+async def get_subsystems():
+    return engine.get_subsystems()
 
 
 # ── Graph Visualization Data ──
@@ -226,24 +226,24 @@ async def load_demo_data():
 
     # System-level requirements
     reqs = [
-        ("SYS-001", "시스템 전원 관리", "시스템은 전원 On/Off를 제어할 수 있어야 한다", "requirement", "critical", "시스템 요구사항"),
-        ("SYS-002", "비상 정지", "비상 상황 시 3초 이내 시스템을 정지할 수 있어야 한다", "requirement", "critical", "시스템 요구사항"),
-        ("SYS-003", "사용자 인증", "시스템 접근 시 사용자 인증을 수행해야 한다", "requirement", "high", "시스템 요구사항"),
-        ("SPC-001", "전원 모듈 설계", "전원 모듈은 12V DC 입력을 지원한다", "specification", "high", "설계 사양"),
-        ("SPC-002", "비상 정지 회로", "하드웨어 레벨의 비상 정지 회로를 구현한다", "specification", "critical", "설계 사양"),
-        ("SPC-003", "인증 프로토콜", "OAuth 2.0 기반 인증을 적용한다", "specification", "high", "설계 사양"),
-        ("DES-001", "전원 회로도", "전원 공급 회로의 상세 설계", "design", "high", "상세 설계"),
-        ("TST-001", "전원 On/Off 테스트", "전원 켜기/끄기 100회 반복 테스트", "test_case", "high", "테스트"),
-        ("TST-002", "비상 정지 응답 테스트", "비상 정지 시간 측정 테스트", "test_case", "critical", "테스트"),
-        ("TST-003", "인증 보안 테스트", "인증 우회 시도 및 보안 검증", "test_case", "high", "테스트"),
-        ("RSK-001", "전원 불안정 위험", "입력 전원 불안정 시 시스템 오동작 위험", "risk", "high", "위험 관리"),
+        ("SYS-001", "시스템 전원 관리", "시스템은 전원 On/Off를 제어할 수 있어야 한다", "requirement", "critical", "SS"),
+        ("SYS-002", "비상 정지", "비상 상황 시 3초 이내 시스템을 정지할 수 있어야 한다", "requirement", "critical", "SS"),
+        ("SYS-003", "사용자 인증", "시스템 접근 시 사용자 인증을 수행해야 한다", "requirement", "high", "GCS"),
+        ("SPC-001", "전원 모듈 설계", "전원 모듈은 12V DC 입력을 지원한다", "specification", "high", "SS"),
+        ("SPC-002", "비상 정지 회로", "하드웨어 레벨의 비상 정지 회로를 구현한다", "specification", "critical", "AVS"),
+        ("SPC-003", "인증 프로토콜", "OAuth 2.0 기반 인증을 적용한다", "specification", "high", "GCS"),
+        ("DES-001", "전원 회로도", "전원 공급 회로의 상세 설계", "design", "high", "SS"),
+        ("TST-001", "전원 On/Off 테스트", "전원 켜기/끄기 100회 반복 테스트", "test_case", "high", "SS"),
+        ("TST-002", "비상 정지 응답 테스트", "비상 정지 시간 측정 테스트", "test_case", "critical", "AVS"),
+        ("TST-003", "인증 보안 테스트", "인증 우회 시도 및 보안 검증", "test_case", "high", "GCS"),
+        ("RSK-001", "전원 불안정 위험", "입력 전원 불안정 시 시스템 오동작 위험", "risk", "high", "DLS"),
     ]
 
-    for rid, title, content, ntype, priority, module in reqs:
+    for rid, title, content, ntype, priority, subsystem in reqs:
         engine.add_node(CreateNodeRequest(
             id=rid, title=title, content=content,
             node_type=ntype, priority=priority,
-            author="시스템", module=module,
+            author="시스템", subsystem=subsystem,
         ))
 
     # Traceability links

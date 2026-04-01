@@ -37,6 +37,13 @@ class NodeStatus(str, Enum):
     DELETED = "deleted"
 
 
+class Subsystem(str, Enum):
+    SS = "SS"
+    GCS = "GCS"
+    DLS = "DLS"
+    AVS = "AVS"
+
+
 class RequirementNode(BaseModel):
     id: str
     title: str
@@ -49,7 +56,7 @@ class RequirementNode(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
     version: int = 1
     tags: list[str] = Field(default_factory=list)
-    module: str = "default"
+    subsystem: str = "SS"
 
 
 class RequirementLink(BaseModel):
@@ -69,7 +76,7 @@ class CreateNodeRequest(BaseModel):
     priority: Priority = Priority.MEDIUM
     author: str = ""
     tags: list[str] = Field(default_factory=list)
-    module: str = "default"
+    subsystem: str = "SS"
 
 
 class UpdateNodeRequest(BaseModel):
@@ -78,6 +85,7 @@ class UpdateNodeRequest(BaseModel):
     priority: Optional[Priority] = None
     status: Optional[NodeStatus] = None
     tags: Optional[list[str]] = None
+    subsystem: Optional[str] = None
 
 
 class CreateLinkRequest(BaseModel):
