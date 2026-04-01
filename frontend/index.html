@@ -440,6 +440,7 @@
             <button class="btn" onclick="openModal('link')">+ Link</button>
             <button class="btn" onclick="openModal('baseline')">Baseline</button>
             <button class="btn" onclick="openCompareModal()">Compare</button>
+            <button class="btn" onclick="openModal('subsystem')">Subsystems</button>
         </div>
     </div>
 
@@ -612,6 +613,23 @@
             <div class="modal-footer">
                 <button class="btn" onclick="closeModal('baseline')">Cancel</button>
                 <button class="btn btn-primary" onclick="submitBaseline()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subsystem Management Modal -->
+    <div class="modal-overlay" id="modal-subsystem">
+        <div class="modal" style="width:450px">
+            <div class="modal-header">Subsystem Management</div>
+            <div class="modal-body">
+                <div style="display:flex;gap:8px;margin-bottom:16px">
+                    <input id="new-subsystem-name" placeholder="New subsystem name (e.g., FCS)" style="flex:1;padding:8px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px">
+                    <button class="btn btn-primary" onclick="addSubsystem()">Add</button>
+                </div>
+                <div id="subsystem-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeModal('subsystem')">Close</button>
             </div>
         </div>
     </div>
@@ -1117,6 +1135,7 @@
         function openModal(type) {
             document.getElementById(`modal-${type}`).classList.add('open');
             if (type === 'link') populateLinkSelects();
+            if (type === 'subsystem') refreshSubsystemModal();
         }
 
         function closeModal(type) {
@@ -1205,6 +1224,56 @@
             document.getElementById('stat-suspects').textContent = stats.suspect_links;
             document.getElementById('stat-baselines').textContent = stats.baselines;
             document.getElementById('stat-subsystems').textContent = stats.subsystems?.length || 0;
+        }
+
+        // ── Subsystem Management ──
+        async function refreshSubsystemModal() {
+            const subs = await api('/api/subsystems');
+            subsystemList = subs;
+            // Count nodes per subsystem
+            const counts = {};
+            allNodes.forEach(n => { counts[n.subsystem] = (counts[n.subsystem] || 0) + 1; });
+
+            const container = document.getElementById('subsystem-list');
+            container.innerHTML = subs.map(s => {
+                const count = counts[s] || 0;
+                return `<div class="link-item" style="margin:4px 0">
+                    <div>
+                        <strong>${s}</strong>
+                        <small style="color:var(--text-secondary);margin-left:8px">${count} node(s)</small>
+                    </div>
+                    <button class="btn btn-sm btn-danger" onclick="deleteSubsystem('${s}')" ${count > 0 ? 'disabled title="In use"' : ''}>Delete</button>
+                </div>`;
+            }).join('');
+
+            // Also update dropdown in node creation form
+            const subSelect = document.getElementById('node-subsystem');
+            if (subSelect) {
+                subSelect.innerHTML = subs.map(s => `<option value="${s}">${s}</option>`).join('');
+            }
+        }
+
+        async function addSubsystem() {
+            const input = document.getElementById('new-subsystem-name');
+            const name = input.value.trim();
+            if (!name) return alert('Name is required.');
+            try {
+                await api('/api/subsystems', { method: 'POST', body: JSON.stringify({ name }) });
+                input.value = '';
+                await refreshSubsystemModal();
+            } catch(e) {
+                alert('Failed to add subsystem.');
+            }
+        }
+
+        async function deleteSubsystem(name) {
+            if (!confirm(`Delete subsystem "${name}"?`)) return;
+            try {
+                await api(`/api/subsystems/${encodeURIComponent(name)}`, { method: 'DELETE' });
+                await refreshSubsystemModal();
+            } catch(e) {
+                alert('Cannot delete: subsystem is in use.');
+            }
         }
 
         // ── Baseline Compare ──

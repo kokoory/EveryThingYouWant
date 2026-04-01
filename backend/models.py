@@ -37,11 +37,7 @@ class NodeStatus(str, Enum):
     DELETED = "deleted"
 
 
-class Subsystem(str, Enum):
-    SS = "SS"
-    GCS = "GCS"
-    DLS = "DLS"
-    AVS = "AVS"
+DEFAULT_SUBSYSTEMS = ["SS", "GCS", "DLS", "AVS"]
 
 
 class RequirementNode(BaseModel):
@@ -94,6 +90,10 @@ class CreateLinkRequest(BaseModel):
     target_id: str
     link_type: LinkType = LinkType.TRACES_TO
     description: str = ""
+
+
+class SubsystemRequest(BaseModel):
+    name: str
 
 
 class BaselineRequest(BaseModel):

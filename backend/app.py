@@ -14,6 +14,7 @@ from .models import (
     BaselineRequest,
     CreateLinkRequest,
     CreateNodeRequest,
+    SubsystemRequest,
     UpdateNodeRequest,
 )
 
@@ -201,6 +202,23 @@ async def get_tree_view(root_id: Optional[str] = None):
 @app.get("/api/subsystems")
 async def get_subsystems():
     return engine.get_subsystems()
+
+
+@app.post("/api/subsystems")
+async def add_subsystem(req: SubsystemRequest):
+    if engine.add_subsystem(req.name):
+        engine.save()
+        return {"status": "added", "name": req.name.strip().upper(), "subsystems": engine.get_subsystems()}
+    raise HTTPException(status_code=400, detail=f"Subsystem '{req.name}' already exists or is invalid")
+
+
+@app.delete("/api/subsystems/{name}")
+async def delete_subsystem(name: str):
+    result = engine.delete_subsystem(name)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    engine.save()
+    return {"status": "deleted", "name": name, "subsystems": engine.get_subsystems()}
 
 
 # ── Graph Visualization Data ──

@@ -23,11 +23,9 @@ from .models import (
     Priority,
     RequirementLink,
     RequirementNode,
-    Subsystem,
+    DEFAULT_SUBSYSTEMS,
     UpdateNodeRequest,
 )
-
-SUBSYSTEM_LIST = [s.value for s in Subsystem]
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -40,6 +38,7 @@ class GraphEngine:
         self.graph = nx.DiGraph()
         self.baselines: dict[str, dict] = {}
         self.change_history: list[dict] = []
+        self.subsystem_list: list[str] = list(DEFAULT_SUBSYSTEMS)
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # ── Node Operations ──
@@ -383,7 +382,24 @@ class GraphEngine:
     # ── Subsystem Operations ──
 
     def get_subsystems(self) -> list[str]:
-        return SUBSYSTEM_LIST
+        return list(self.subsystem_list)
+
+    def add_subsystem(self, name: str) -> bool:
+        name = name.strip().upper()
+        if not name or name in self.subsystem_list:
+            return False
+        self.subsystem_list.append(name)
+        return True
+
+    def delete_subsystem(self, name: str) -> dict:
+        if name not in self.subsystem_list:
+            return {"success": False, "error": "Subsystem not found"}
+        # Check if any node uses this subsystem
+        in_use = [nid for nid, data in self.graph.nodes(data=True) if data.get("subsystem") == name]
+        if in_use:
+            return {"success": False, "error": f"Subsystem '{name}' is used by {len(in_use)} node(s): {', '.join(in_use[:5])}"}
+        self.subsystem_list.remove(name)
+        return {"success": True}
 
     def get_used_subsystems(self) -> list[str]:
         used = set()
@@ -425,6 +441,7 @@ class GraphEngine:
                 for s, t, d in self.graph.edges(data=True)
             ],
             "baselines": self.baselines,
+            "subsystem_list": self.subsystem_list,
             "change_history": self.change_history[-100:],
         }
         filepath.write_text(json.dumps(data, default=str, ensure_ascii=False, indent=2))
@@ -444,6 +461,7 @@ class GraphEngine:
             edge["source"] = src
             edge["target"] = tgt
         self.baselines = data.get("baselines", {})
+        self.subsystem_list = data.get("subsystem_list", list(DEFAULT_SUBSYSTEMS))
         self.change_history = data.get("change_history", [])
         return True
 
