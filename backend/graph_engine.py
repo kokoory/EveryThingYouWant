@@ -412,8 +412,8 @@ class GraphEngine:
 
     # ── Export ──
 
-    def export_tree_csv(self) -> str:
-        """Export tree view as CSV string."""
+    def export_tree_csv(self) -> bytes:
+        """Export tree view as CSV bytes with UTF-8 BOM for Excel compatibility."""
         import csv
         import io
         output = io.StringIO()
@@ -422,24 +422,28 @@ class GraphEngine:
 
         tree = self.get_tree_view()
         def flatten(node, level=0):
+            indent = "    " * level
+            nid = node.get("id", "")
+            data = self.graph.nodes.get(nid, {})
             writer.writerow([
                 level,
-                node.get("id", ""),
-                node.get("title", ""),
+                nid,
+                indent + node.get("title", ""),
                 node.get("node_type", ""),
                 node.get("status", ""),
                 node.get("priority", ""),
                 node.get("verification", ""),
                 node.get("subsystem", ""),
-                self.graph.nodes.get(node["id"], {}).get("version", 1) if node["id"] in self.graph.nodes else "",
-                self.graph.nodes.get(node["id"], {}).get("updated_at", "") if node["id"] in self.graph.nodes else "",
+                data.get("version", 1) if nid in self.graph.nodes else "",
+                data.get("updated_at", "") if nid in self.graph.nodes else "",
             ])
             for child in node.get("children", []):
                 flatten(child, level + 1)
 
         for root in tree:
             flatten(root)
-        return output.getvalue()
+        # UTF-8 BOM + content for Excel compatibility
+        return b'\xef\xbb\xbf' + output.getvalue().encode('utf-8')
 
     # ── Statistics ──
 

@@ -201,10 +201,10 @@ async def get_tree_view(root_id: Optional[str] = None):
 
 @app.get("/api/export/csv")
 async def export_csv():
-    csv_content = engine.export_tree_csv()
+    csv_bytes = engine.export_tree_csv()
     return Response(
-        content=csv_content,
-        media_type="text/csv",
+        content=csv_bytes,
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=requirements_tree.csv"},
     )
 
