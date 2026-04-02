@@ -37,6 +37,13 @@ class NodeStatus(str, Enum):
     DELETED = "deleted"
 
 
+class VerificationMethod(str, Enum):
+    INSPECTION = "inspection"
+    ANALYSIS = "analysis"
+    DEMONSTRATION = "demonstration"
+    TEST = "test"
+
+
 DEFAULT_SUBSYSTEMS = ["SS", "GCS", "DLS", "AVS"]
 
 
@@ -47,6 +54,7 @@ class RequirementNode(BaseModel):
     node_type: NodeType = NodeType.REQUIREMENT
     priority: Priority = Priority.MEDIUM
     status: NodeStatus = NodeStatus.DRAFT
+    verification: str = "test"
     author: str = ""
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
@@ -70,6 +78,7 @@ class CreateNodeRequest(BaseModel):
     content: str
     node_type: NodeType = NodeType.REQUIREMENT
     priority: Priority = Priority.MEDIUM
+    verification: str = "test"
     author: str = ""
     tags: list[str] = Field(default_factory=list)
     subsystem: str = "SS"
@@ -81,6 +90,7 @@ class UpdateNodeRequest(BaseModel):
     node_type: Optional[NodeType] = None
     priority: Optional[Priority] = None
     status: Optional[NodeStatus] = None
+    verification: Optional[str] = None
     tags: Optional[list[str]] = None
     subsystem: Optional[str] = None
 

@@ -436,6 +436,8 @@
         </h1>
         <div class="header-actions">
             <button class="btn" onclick="loadDemoData()">Demo Data</button>
+            <button class="btn" onclick="exportCSV()">CSV</button>
+            <button class="btn" onclick="exportGraphPDF()">PDF</button>
             <button class="btn btn-primary" onclick="openModal('node')">+ Node</button>
             <button class="btn" onclick="openModal('link')">+ Link</button>
             <button class="btn" onclick="openModal('baseline')">Baseline</button>
@@ -475,6 +477,7 @@
                                 <th>Type</th>
                                 <th>Status</th>
                                 <th>Priority</th>
+                                <th>Verification</th>
                                 <th>Subsystem</th>
                                 <th>Ver</th>
                                 <th>Updated</th>
@@ -543,6 +546,15 @@
                         <option value="critical">Critical</option>
                         <option value="high">High</option>
                         <option value="low">Low</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Verification Method</label>
+                    <select id="node-verification">
+                        <option value="inspection">Inspection (검사)</option>
+                        <option value="analysis">Analysis (분석)</option>
+                        <option value="demonstration">Demonstration (시연)</option>
+                        <option value="test" selected>Test (시험)</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -786,6 +798,7 @@
                     <td><span class="type-badge type-${n.node_type}">${n.node_type}</span></td>
                     <td>${n.status === 'suspect' ? '<span class="suspect-badge">SUSPECT</span>' : n.status}</td>
                     <td>${n.priority}</td>
+                    <td>${(n.verification || 'test').charAt(0).toUpperCase()}</td>
                     <td>${n.subsystem || ''}</td>
                     <td>v${n.version || 1}</td>
                     <td style="font-size:11px;color:var(--text-secondary)">${n.updated_at ? new Date(n.updated_at).toLocaleString('ko-KR') : '-'}</td>
@@ -946,6 +959,10 @@
                     <div class="value">v${node.version || 1} <small style="color:var(--text-secondary)">(${node.updated_at ? new Date(node.updated_at).toLocaleString('ko-KR') : '-'})</small></div>
                 </div>
                 <div class="detail-field">
+                    <label>Verification Method</label>
+                    <div class="value">${verificationLabel(node.verification)}</div>
+                </div>
+                <div class="detail-field">
                     <label>Subsystem</label>
                     <div class="value">${node.subsystem || 'SS'}</div>
                 </div>
@@ -1062,6 +1079,14 @@
                     </select>
                 </div>
                 <div class="detail-field">
+                    <label>Verification Method</label>
+                    <select id="edit-verification">
+                        ${[['inspection','Inspection (검사)'],['analysis','Analysis (분석)'],['demonstration','Demonstration (시연)'],['test','Test (시험)']].map(([v,l]) =>
+                            `<option value="${v}" ${(node.verification || 'test') === v ? 'selected' : ''}>${l}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div class="detail-field">
                     <label>Subsystem</label>
                     <select id="edit-subsystem">
                         ${subsystemList.map(s =>
@@ -1083,6 +1108,7 @@
                 node_type: document.getElementById('edit-type').value,
                 priority: document.getElementById('edit-priority').value,
                 status: document.getElementById('edit-status').value,
+                verification: document.getElementById('edit-verification').value,
                 subsystem: document.getElementById('edit-subsystem').value,
             };
             await api(`/api/nodes/${selectedNodeId}`, {
@@ -1155,6 +1181,7 @@
                 content: document.getElementById('node-content').value,
                 node_type: document.getElementById('node-type').value,
                 priority: document.getElementById('node-priority').value,
+                verification: document.getElementById('node-verification').value,
                 subsystem: document.getElementById('node-subsystem').value || 'SS',
                 author: document.getElementById('node-author').value,
             };
@@ -1357,6 +1384,56 @@
             }
 
             container.innerHTML = html;
+        }
+
+        // ── Helpers ──
+        const VERIF_LABELS = {
+            inspection: 'Inspection (검사)',
+            analysis: 'Analysis (분석)',
+            demonstration: 'Demonstration (시연)',
+            test: 'Test (시험)',
+        };
+        function verificationLabel(v) {
+            return VERIF_LABELS[v] || v || 'Test (시험)';
+        }
+
+        // ── Export ──
+        function exportCSV() {
+            window.location.href = API + '/api/export/csv';
+        }
+
+        function exportGraphPDF() {
+            if (!network) { alert('No graph to export.'); return; }
+            const canvas = document.querySelector('#graph-container canvas');
+            if (!canvas) { alert('Graph canvas not found.'); return; }
+
+            // Create a PDF using canvas image
+            const imgData = canvas.toDataURL('image/png', 1.0);
+            const w = canvas.width;
+            const h = canvas.height;
+
+            // Build a simple PDF manually (no library needed)
+            const a4w = 595.28, a4h = 841.89; // A4 points
+            const scale = Math.min(a4w / w, a4h / h) * 0.9;
+            const sw = Math.round(w * scale);
+            const sh = Math.round(h * scale);
+            const ox = Math.round((a4w - sw) / 2);
+            const oy = Math.round((a4h - sh) / 2);
+
+            // Use a printable window approach
+            const printWin = window.open('', '_blank');
+            printWin.document.write(`
+                <!DOCTYPE html><html><head><title>Requirements Graph</title>
+                <style>
+                    @media print { @page { size: landscape; margin: 10mm; } body { margin: 0; } }
+                    body { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #fff; }
+                    img { max-width: 100%; max-height: 95vh; }
+                </style></head><body>
+                <img src="${imgData}">
+                <script>setTimeout(()=>{ window.print(); }, 500);<\/script>
+                </body></html>
+            `);
+            printWin.document.close();
         }
 
         // ── Start ──

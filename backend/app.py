@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
@@ -197,6 +197,18 @@ async def get_tree_view(root_id: Optional[str] = None):
     return engine.get_tree_view(root_id=root_id)
 
 
+# ── Export ──
+
+@app.get("/api/export/csv")
+async def export_csv():
+    csv_content = engine.export_tree_csv()
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=requirements_tree.csv"},
+    )
+
+
 # ── Subsystems ──
 
 @app.get("/api/subsystems")
@@ -250,26 +262,26 @@ async def load_demo_data():
     if engine.graph.number_of_nodes() > 0:
         return {"status": "skipped", "message": "Data already exists"}
 
-    # System-level requirements
+    # System-level requirements: (id, title, content, type, priority, subsystem, verification)
     reqs = [
-        ("SYS-001", "시스템 전원 관리", "시스템은 전원 On/Off를 제어할 수 있어야 한다", "requirement", "critical", "SS"),
-        ("SYS-002", "비상 정지", "비상 상황 시 3초 이내 시스템을 정지할 수 있어야 한다", "requirement", "critical", "SS"),
-        ("SYS-003", "사용자 인증", "시스템 접근 시 사용자 인증을 수행해야 한다", "requirement", "high", "GCS"),
-        ("SPC-001", "전원 모듈 설계", "전원 모듈은 12V DC 입력을 지원한다", "specification", "high", "SS"),
-        ("SPC-002", "비상 정지 회로", "하드웨어 레벨의 비상 정지 회로를 구현한다", "specification", "critical", "AVS"),
-        ("SPC-003", "인증 프로토콜", "OAuth 2.0 기반 인증을 적용한다", "specification", "high", "GCS"),
-        ("DES-001", "전원 회로도", "전원 공급 회로의 상세 설계", "design", "high", "SS"),
-        ("TST-001", "전원 On/Off 테스트", "전원 켜기/끄기 100회 반복 테스트", "test_case", "high", "SS"),
-        ("TST-002", "비상 정지 응답 테스트", "비상 정지 시간 측정 테스트", "test_case", "critical", "AVS"),
-        ("TST-003", "인증 보안 테스트", "인증 우회 시도 및 보안 검증", "test_case", "high", "GCS"),
-        ("RSK-001", "전원 불안정 위험", "입력 전원 불안정 시 시스템 오동작 위험", "risk", "high", "DLS"),
+        ("SYS-001", "시스템 전원 관리", "시스템은 전원 On/Off를 제어할 수 있어야 한다", "requirement", "critical", "SS", "test"),
+        ("SYS-002", "비상 정지", "비상 상황 시 3초 이내 시스템을 정지할 수 있어야 한다", "requirement", "critical", "SS", "demonstration"),
+        ("SYS-003", "사용자 인증", "시스템 접근 시 사용자 인증을 수행해야 한다", "requirement", "high", "GCS", "test"),
+        ("SPC-001", "전원 모듈 설계", "전원 모듈은 12V DC 입력을 지원한다", "specification", "high", "SS", "analysis"),
+        ("SPC-002", "비상 정지 회로", "하드웨어 레벨의 비상 정지 회로를 구현한다", "specification", "critical", "AVS", "inspection"),
+        ("SPC-003", "인증 프로토콜", "OAuth 2.0 기반 인증을 적용한다", "specification", "high", "GCS", "analysis"),
+        ("DES-001", "전원 회로도", "전원 공급 회로의 상세 설계", "design", "high", "SS", "inspection"),
+        ("TST-001", "전원 On/Off 테스트", "전원 켜기/끄기 100회 반복 테스트", "test_case", "high", "SS", "test"),
+        ("TST-002", "비상 정지 응답 테스트", "비상 정지 시간 측정 테스트", "test_case", "critical", "AVS", "test"),
+        ("TST-003", "인증 보안 테스트", "인증 우회 시도 및 보안 검증", "test_case", "high", "GCS", "test"),
+        ("RSK-001", "전원 불안정 위험", "입력 전원 불안정 시 시스템 오동작 위험", "risk", "high", "DLS", "analysis"),
     ]
 
-    for rid, title, content, ntype, priority, subsystem in reqs:
+    for rid, title, content, ntype, priority, subsystem, verif in reqs:
         engine.add_node(CreateNodeRequest(
             id=rid, title=title, content=content,
             node_type=ntype, priority=priority,
-            author="시스템", subsystem=subsystem,
+            verification=verif, author="시스템", subsystem=subsystem,
         ))
 
     # Traceability links

@@ -52,6 +52,7 @@ class GraphEngine:
             content=req.content,
             node_type=req.node_type,
             priority=req.priority,
+            verification=req.verification,
             author=req.author,
             tags=req.tags,
             subsystem=req.subsystem,
@@ -376,6 +377,8 @@ class GraphEngine:
             "node_type": data.get("node_type", "unknown"),
             "status": data.get("status", "unknown"),
             "priority": data.get("priority", "medium"),
+            "verification": data.get("verification", "test"),
+            "subsystem": data.get("subsystem", "SS"),
             "children": children,
         }
 
@@ -406,6 +409,37 @@ class GraphEngine:
         for _, data in self.graph.nodes(data=True):
             used.add(data.get("subsystem", "SS"))
         return sorted(used)
+
+    # ── Export ──
+
+    def export_tree_csv(self) -> str:
+        """Export tree view as CSV string."""
+        import csv
+        import io
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Level", "ID", "Title", "Type", "Status", "Priority", "Verification", "Subsystem", "Version", "Updated"])
+
+        tree = self.get_tree_view()
+        def flatten(node, level=0):
+            writer.writerow([
+                level,
+                node.get("id", ""),
+                node.get("title", ""),
+                node.get("node_type", ""),
+                node.get("status", ""),
+                node.get("priority", ""),
+                node.get("verification", ""),
+                node.get("subsystem", ""),
+                self.graph.nodes.get(node["id"], {}).get("version", 1) if node["id"] in self.graph.nodes else "",
+                self.graph.nodes.get(node["id"], {}).get("updated_at", "") if node["id"] in self.graph.nodes else "",
+            ])
+            for child in node.get("children", []):
+                flatten(child, level + 1)
+
+        for root in tree:
+            flatten(root)
+        return output.getvalue()
 
     # ── Statistics ──
 
