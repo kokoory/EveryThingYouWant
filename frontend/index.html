@@ -443,6 +443,7 @@
             <button class="btn" onclick="openModal('baseline')">Baseline</button>
             <button class="btn" onclick="openCompareModal()">Compare</button>
             <button class="btn" onclick="openModal('subsystem')">Subsystems</button>
+            <button class="btn btn-primary" onclick="openReport()">Report</button>
         </div>
     </div>
 
@@ -999,6 +1000,26 @@
                     `).join('') || '<div style="color:var(--text-secondary);font-size:12px">None</div>'}
                 </div>
                 <div class="detail-field">
+                    <label>Attachments (근거자료)</label>
+                    <div id="attachments-list">
+                        ${(node.attachments || []).map(a => `
+                            <div class="link-item" style="margin:4px 0">
+                                <div>
+                                    <a href="/api/attachments/${a.stored_name}" target="_blank" style="color:var(--accent)">${a.filename}</a>
+                                    ${a.description ? `<br><small style="color:var(--text-secondary)">${a.description}</small>` : ''}
+                                    <br><small style="color:var(--text-secondary)">${(a.size/1024).toFixed(1)}KB | ${a.uploaded_at?.substring(0,10) || ''}</small>
+                                </div>
+                                <button class="btn btn-sm btn-danger" onclick="deleteAttachment('${nodeId}','${a.id}')">X</button>
+                            </div>
+                        `).join('') || '<div style="color:var(--text-secondary);font-size:12px">No attachments</div>'}
+                    </div>
+                    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                        <input type="file" id="attach-file" style="font-size:12px;flex:1;min-width:0">
+                        <input id="attach-desc" placeholder="Description" style="padding:4px 8px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:12px;width:120px">
+                        <button class="btn btn-sm btn-primary" onclick="uploadAttachment('${nodeId}')">Upload</button>
+                    </div>
+                </div>
+                <div class="detail-field">
                     <label>Impact Analysis</label>
                     <button class="btn btn-sm" onclick="showImpactAnalysis('${nodeId}')">Analyze Impact</button>
                     <div id="impact-result"></div>
@@ -1395,6 +1416,31 @@
         };
         function verificationLabel(v) {
             return VERIF_LABELS[v] || v || 'Test (시험)';
+        }
+
+        // ── Attachments ──
+        async function uploadAttachment(nodeId) {
+            const fileInput = document.getElementById('attach-file');
+            const desc = document.getElementById('attach-desc').value;
+            if (!fileInput.files.length) return alert('Select a file first.');
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('description', desc);
+            await fetch(`/api/nodes/${nodeId}/attachments`, { method: 'POST', body: formData });
+            await refreshTable();
+            selectNode(nodeId);
+        }
+
+        async function deleteAttachment(nodeId, fileId) {
+            if (!confirm('Delete this attachment?')) return;
+            await api(`/api/nodes/${nodeId}/attachments/${fileId}`, { method: 'DELETE' });
+            await refreshTable();
+            selectNode(nodeId);
+        }
+
+        // ── Report ──
+        function openReport() {
+            window.open('/api/report', '_blank');
         }
 
         // ── Export ──

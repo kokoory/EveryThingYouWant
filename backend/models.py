@@ -61,6 +61,7 @@ class RequirementNode(BaseModel):
     version: int = 1
     tags: list[str] = Field(default_factory=list)
     subsystem: str = "SS"
+    attachments: list[dict] = Field(default_factory=list)
 
 
 class RequirementLink(BaseModel):

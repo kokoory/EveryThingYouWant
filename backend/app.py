@@ -1,9 +1,12 @@
 """FastAPI application for the Requirements Management System."""
 
+import base64
+import uuid as uuid_mod
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -207,6 +210,249 @@ async def export_csv():
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=requirements_tree.csv"},
     )
+
+
+# ── Attachments ──
+
+UPLOAD_DIR = Path(__file__).parent.parent / "data" / "attachments"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.post("/api/nodes/{node_id}/attachments")
+async def upload_attachment(node_id: str, file: UploadFile = File(...), description: str = Form("")):
+    if node_id not in engine.graph.nodes:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    ext = Path(file.filename).suffix
+    file_id = uuid_mod.uuid4().hex[:8]
+    stored_name = f"{node_id}_{file_id}{ext}"
+    file_path = UPLOAD_DIR / stored_name
+    content = await file.read()
+    file_path.write_bytes(content)
+
+    attachment = {
+        "id": file_id,
+        "filename": file.filename,
+        "stored_name": stored_name,
+        "description": description,
+        "size": len(content),
+        "uploaded_at": datetime.now().isoformat(),
+    }
+    attachments = engine.graph.nodes[node_id].get("attachments", [])
+    attachments.append(attachment)
+    engine.graph.nodes[node_id]["attachments"] = attachments
+    engine.save()
+    return attachment
+
+
+@app.get("/api/attachments/{stored_name}")
+async def download_attachment(stored_name: str):
+    file_path = UPLOAD_DIR / stored_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    content = file_path.read_bytes()
+    ext = file_path.suffix.lower()
+    media_types = {
+        ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg", ".gif": "image/gif", ".doc": "application/msword",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".xls": "application/vnd.ms-excel",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".txt": "text/plain", ".csv": "text/csv",
+    }
+    return Response(
+        content=content,
+        media_type=media_types.get(ext, "application/octet-stream"),
+        headers={"Content-Disposition": f"inline; filename={Path(stored_name).name}"},
+    )
+
+
+@app.delete("/api/nodes/{node_id}/attachments/{file_id}")
+async def delete_attachment(node_id: str, file_id: str):
+    if node_id not in engine.graph.nodes:
+        raise HTTPException(status_code=404, detail="Node not found")
+    attachments = engine.graph.nodes[node_id].get("attachments", [])
+    target = None
+    for a in attachments:
+        if a["id"] == file_id:
+            target = a
+            break
+    if not target:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    # Delete file
+    file_path = UPLOAD_DIR / target["stored_name"]
+    if file_path.exists():
+        file_path.unlink()
+    attachments.remove(target)
+    engine.graph.nodes[node_id]["attachments"] = attachments
+    engine.save()
+    return {"status": "deleted"}
+
+
+# ── Report ──
+
+@app.get("/api/report", response_class=HTMLResponse)
+async def generate_report():
+    """Generate a full HTML report with tree, graph, nodes, links, and attachments."""
+    nodes = engine.get_all_nodes()
+    links = engine.get_all_links()
+    tree = engine.get_tree_view()
+    stats = engine.get_statistics()
+    suspects = engine.get_suspect_nodes()
+
+    verif_labels = {
+        "inspection": "Inspection (검사)", "analysis": "Analysis (분석)",
+        "demonstration": "Demonstration (시연)", "test": "Test (시험)",
+    }
+    type_colors = {
+        "requirement": "#4A90D9", "specification": "#7B68EE",
+        "test_case": "#2ECC71", "design": "#F39C12", "risk": "#E74C3C",
+    }
+    priority_colors = {"critical": "#E74C3C", "high": "#F39C12", "medium": "#3498DB", "low": "#95A5A6"}
+
+    # Build tree HTML
+    def render_tree_html(node, level=0):
+        nid = node.get("id", "")
+        data = engine.graph.nodes.get(nid, {})
+        nt = node.get("node_type", "unknown")
+        color = type_colors.get(nt, "#888")
+        status = node.get("status", "")
+        suspect_mark = ' <span style="color:#E74C3C;font-weight:bold">⚠ SUSPECT</span>' if status == "suspect" else ""
+        indent = 24 * level
+        html = f'<div style="margin-left:{indent}px;padding:4px 0;border-bottom:1px solid #eee">'
+        html += f'<span style="background:{color};color:#fff;padding:1px 6px;border-radius:3px;font-size:11px">{nt[:3].upper()}</span> '
+        html += f'<strong>{nid}</strong> - {node.get("title", "")}{suspect_mark}'
+        html += f' <small style="color:#888">({data.get("verification","test")} | {data.get("subsystem","SS")} | v{data.get("version",1)})</small>'
+        html += '</div>\n'
+        for child in node.get("children", []):
+            html += render_tree_html(child, level + 1)
+        return html
+
+    tree_html = ""
+    for root in tree:
+        tree_html += render_tree_html(root)
+
+    # Build node detail cards
+    node_cards = ""
+    for n in sorted(nodes, key=lambda x: x.get("id", "")):
+        nid = n.get("id", "")
+        nt = n.get("node_type", "")
+        color = type_colors.get(nt, "#888")
+        pri_color = priority_colors.get(n.get("priority", ""), "#888")
+        verif = verif_labels.get(n.get("verification", "test"), n.get("verification", ""))
+
+        # Links
+        node_links = engine.get_node_links(nid)
+        incoming_html = ", ".join([f'{l["source_id"]} ({l.get("link_type","")})' for l in node_links["incoming"]]) or "None"
+        outgoing_html = ", ".join([f'{l["target_id"]} ({l.get("link_type","")})' for l in node_links["outgoing"]]) or "None"
+
+        # Attachments
+        attachments = n.get("attachments", [])
+        attach_html = ""
+        if attachments:
+            attach_html = '<div style="margin-top:8px"><strong>Attachments (근거자료):</strong><ul style="margin:4px 0">'
+            for a in attachments:
+                attach_html += f'<li><a href="/api/attachments/{a["stored_name"]}" target="_blank">{a["filename"]}</a>'
+                if a.get("description"):
+                    attach_html += f' - <em>{a["description"]}</em>'
+                attach_html += f' <small>({a.get("size",0)//1024}KB, {a.get("uploaded_at","")[:10]})</small></li>'
+            attach_html += '</ul></div>'
+
+        # Version history
+        vh = n.get("version_history", [])
+        vh_html = ""
+        if vh:
+            vh_html = '<div style="margin-top:8px"><strong>Version History:</strong><table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:4px">'
+            vh_html += '<tr style="background:#f5f5f5"><th style="padding:4px;text-align:left">Ver</th><th style="padding:4px;text-align:left">Date</th><th style="padding:4px;text-align:left">Changes</th></tr>'
+            for v in vh:
+                changes_str = "; ".join([f'{k}: {c["old"]}→{c["new"]}' for k, c in v["changes"].items() if k not in ("updated_at", "created_at")])
+                vh_html += f'<tr><td style="padding:4px">v{v["version"]}</td><td style="padding:4px">{v["date"][:19]}</td><td style="padding:4px">{changes_str}</td></tr>'
+            vh_html += '</table></div>'
+
+        node_cards += f'''
+        <div style="border:1px solid #ddd;border-left:4px solid {color};border-radius:6px;padding:16px;margin:12px 0;page-break-inside:avoid">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <span style="background:{color};color:#fff;padding:2px 8px;border-radius:3px;font-size:12px">{nt}</span>
+                    <span style="background:{pri_color};color:#fff;padding:2px 8px;border-radius:3px;font-size:12px;margin-left:4px">{n.get("priority","")}</span>
+                    <strong style="font-size:16px;margin-left:8px">{nid}</strong>
+                </div>
+                <div style="color:#888;font-size:12px">v{n.get("version",1)} | {n.get("updated_at","")[:10]} | {n.get("subsystem","")}</div>
+            </div>
+            <h3 style="margin:8px 0 4px">{n.get("title","")}</h3>
+            <p style="color:#555;margin:4px 0">{n.get("content","")}</p>
+            <div style="display:flex;gap:24px;margin-top:8px;font-size:13px;color:#666">
+                <div><strong>Verification:</strong> {verif}</div>
+                <div><strong>Status:</strong> {n.get("status","")}</div>
+            </div>
+            <div style="font-size:12px;color:#666;margin-top:8px">
+                <div><strong>Incoming Links:</strong> {incoming_html}</div>
+                <div><strong>Outgoing Links:</strong> {outgoing_html}</div>
+            </div>
+            {attach_html}
+            {vh_html}
+        </div>'''
+
+    # Links table
+    links_table = '<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="background:#f5f5f5"><th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">Source</th><th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">Target</th><th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">Type</th><th style="padding:8px;text-align:left;border-bottom:2px solid #ddd">Suspect</th></tr>'
+    for l in links:
+        suspect_style = 'color:#E74C3C;font-weight:bold' if l.get("is_suspect") else ''
+        links_table += f'<tr><td style="padding:6px;border-bottom:1px solid #eee">{l.get("source_id","")}</td><td style="padding:6px;border-bottom:1px solid #eee">{l.get("target_id","")}</td><td style="padding:6px;border-bottom:1px solid #eee">{l.get("link_type","")}</td><td style="padding:6px;border-bottom:1px solid #eee;{suspect_style}">{"⚠ YES" if l.get("is_suspect") else "-"}</td></tr>'
+    links_table += '</table>'
+
+    # Suspect summary
+    suspect_html = ""
+    if suspects:
+        suspect_html = f'<div style="background:#FFF3F3;border:1px solid #E74C3C;border-radius:6px;padding:16px;margin:12px 0"><h3 style="color:#E74C3C;margin:0 0 8px">⚠ Suspect Items ({len(suspects)})</h3><ul>'
+        for s in suspects:
+            suspect_html += f'<li><strong>{s["id"]}</strong> - {s.get("title","")} [{s.get("subsystem","")}]</li>'
+        suspect_html += '</ul></div>'
+
+    report_date = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    return f'''<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Requirements Report</title>
+<style>
+    body {{ font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; max-width: 1000px; margin: 0 auto; padding: 24px; color: #333; }}
+    h1 {{ border-bottom: 3px solid #4A90D9; padding-bottom: 8px; }}
+    h2 {{ color: #4A90D9; border-bottom: 1px solid #ddd; padding-bottom: 4px; margin-top: 32px; }}
+    .stats {{ display: flex; gap: 16px; margin: 16px 0; }}
+    .stat-box {{ flex: 1; padding: 16px; background: #f8f9fa; border-radius: 8px; text-align: center; }}
+    .stat-box .num {{ font-size: 28px; font-weight: bold; color: #4A90D9; }}
+    .stat-box .label {{ font-size: 12px; color: #888; }}
+    @media print {{
+        body {{ font-size: 11px; }}
+        .stat-box .num {{ font-size: 20px; }}
+        h1 {{ font-size: 18px; }}
+        h2 {{ font-size: 15px; page-break-before: auto; }}
+    }}
+</style></head><body>
+<h1>Requirements Traceability Report</h1>
+<p style="color:#888">Generated: {report_date} | Project: {engine.project_name}</p>
+
+<div class="stats">
+    <div class="stat-box"><div class="num">{stats["total_nodes"]}</div><div class="label">Total Nodes</div></div>
+    <div class="stat-box"><div class="num">{stats["total_links"]}</div><div class="label">Total Links</div></div>
+    <div class="stat-box"><div class="num">{stats["suspect_links"]}</div><div class="label">Suspect Links</div></div>
+    <div class="stat-box"><div class="num">{len(stats.get("subsystems",[]))}</div><div class="label">Subsystems</div></div>
+    <div class="stat-box"><div class="num">{stats["baselines"]}</div><div class="label">Baselines</div></div>
+</div>
+
+{suspect_html}
+
+<h2>1. Requirements Tree (계층 구조)</h2>
+<div style="border:1px solid #ddd;border-radius:6px;padding:16px;background:#fafafa">{tree_html}</div>
+
+<h2>2. Traceability Matrix (추적성 매트릭스)</h2>
+{links_table}
+
+<h2>3. Node Details (노드 상세)</h2>
+{node_cards}
+
+<div style="margin-top:40px;padding-top:16px;border-top:2px solid #ddd;color:#888;font-size:12px;text-align:center">
+    Requirements Graph Manager — Report generated on {report_date}
+</div>
+</body></html>'''
 
 
 # ── Subsystems ──
