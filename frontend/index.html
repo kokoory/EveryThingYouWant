@@ -443,6 +443,9 @@
             <button class="btn" onclick="openModal('baseline')">Baseline</button>
             <button class="btn" onclick="openCompareModal()">Compare</button>
             <button class="btn" onclick="openModal('subsystem')">Subsystems</button>
+            <button class="btn" onclick="downloadBackup()">Backup</button>
+            <button class="btn" onclick="document.getElementById('restore-file').click()">Restore</button>
+            <input type="file" id="restore-file" accept=".zip" style="display:none" onchange="restoreBackup(this)">
             <button class="btn btn-primary" onclick="openReport()">Report</button>
         </div>
     </div>
@@ -1436,6 +1439,35 @@
             await api(`/api/nodes/${nodeId}/attachments/${fileId}`, { method: 'DELETE' });
             await refreshTable();
             selectNode(nodeId);
+        }
+
+        // ── Backup & Restore ──
+        function downloadBackup() {
+            window.location.href = API + '/api/backup';
+        }
+
+        async function restoreBackup(input) {
+            if (!input.files.length) return;
+            if (!confirm('Restore from backup? This will overwrite ALL current data.')) {
+                input.value = '';
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', input.files[0]);
+            try {
+                const res = await fetch(API + '/api/restore', { method: 'POST', body: formData });
+                const result = await res.json();
+                if (res.ok) {
+                    alert(`Restore complete!\nNodes: ${result.nodes}\nLinks: ${result.links}\nBaselines: ${result.baselines}\nBackup date: ${result.backup_date}`);
+                    if (network) { network.destroy(); network = null; }
+                    await refreshAll();
+                } else {
+                    alert('Restore failed: ' + (result.detail || 'Unknown error'));
+                }
+            } catch(e) {
+                alert('Restore failed: ' + e.message);
+            }
+            input.value = '';
         }
 
         // ── Report ──

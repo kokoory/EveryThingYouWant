@@ -1,7 +1,11 @@
 """FastAPI application for the Requirements Management System."""
 
 import base64
+import io
+import json
+import shutil
 import uuid as uuid_mod
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
@@ -12,7 +16,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from .graph_engine import GraphEngine
+from .graph_engine import GraphEngine, DATA_DIR
 from .models import (
     BaselineRequest,
     CreateLinkRequest,
@@ -453,6 +457,98 @@ async def generate_report():
     Requirements Graph Manager — Report generated on {report_date}
 </div>
 </body></html>'''
+
+
+# ── Backup & Restore ──
+
+@app.get("/api/backup")
+async def backup_project():
+    """Download a ZIP containing all project data + attachments."""
+    engine.save()
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 1. Main data JSON
+        data_file = DATA_DIR / f"{engine.project_name}.json"
+        if data_file.exists():
+            zf.write(data_file, "project_data.json")
+
+        # 2. All attachment files
+        attach_dir = DATA_DIR / "attachments"
+        if attach_dir.exists():
+            for fpath in attach_dir.iterdir():
+                if fpath.is_file():
+                    zf.write(fpath, f"attachments/{fpath.name}")
+
+        # 3. Metadata
+        meta = {
+            "app": "Requirements Graph Manager",
+            "version": "1.0.0",
+            "exported_at": datetime.now().isoformat(),
+            "project_name": engine.project_name,
+            "node_count": engine.graph.number_of_nodes(),
+            "link_count": engine.graph.number_of_edges(),
+            "baseline_count": len(engine.baselines),
+        }
+        zf.writestr("backup_meta.json", json.dumps(meta, ensure_ascii=False, indent=2))
+
+    buf.seek(0)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=rgm_backup_{timestamp}.zip"},
+    )
+
+
+@app.post("/api/restore")
+async def restore_project(file: UploadFile = File(...)):
+    """Restore project from a backup ZIP file."""
+    content = await file.read()
+    buf = io.BytesIO(content)
+
+    try:
+        with zipfile.ZipFile(buf, "r") as zf:
+            names = zf.namelist()
+
+            # Validate
+            if "project_data.json" not in names:
+                raise HTTPException(status_code=400, detail="Invalid backup: project_data.json not found")
+
+            # Read and validate JSON
+            raw = zf.read("project_data.json")
+            data = json.loads(raw)
+            if "nodes" not in data:
+                raise HTTPException(status_code=400, detail="Invalid backup: no nodes in data")
+
+            # Save project data
+            data_file = DATA_DIR / f"{engine.project_name}.json"
+            data_file.write_bytes(raw)
+
+            # Restore attachments
+            attach_dir = DATA_DIR / "attachments"
+            attach_dir.mkdir(parents=True, exist_ok=True)
+            for name in names:
+                if name.startswith("attachments/") and not name.endswith("/"):
+                    fname = Path(name).name
+                    (attach_dir / fname).write_bytes(zf.read(name))
+
+            # Reload engine
+            engine.load()
+
+            meta = {}
+            if "backup_meta.json" in names:
+                meta = json.loads(zf.read("backup_meta.json"))
+
+            return {
+                "status": "restored",
+                "nodes": engine.graph.number_of_nodes(),
+                "links": engine.graph.number_of_edges(),
+                "baselines": len(engine.baselines),
+                "backup_date": meta.get("exported_at", "unknown"),
+            }
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid file: not a ZIP archive")
 
 
 # ── Subsystems ──
