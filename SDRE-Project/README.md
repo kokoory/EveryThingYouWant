@@ -38,6 +38,12 @@ SDRE-Project/
 |   |-- 03_control_theory.md           # 제어 이론 정리 (ARE/SDRE/HJB/MPC)
 |   |-- 04_phd_thesis_roadmap.md       # 박사 논문 방향 및 학습 로드맵
 |   |-- 05_paper_analysis.md           # 핵심 논문 분석 (arXiv 2503.01587 등)
+|   |-- 06_simulation_guide.md         # 시뮬레이션 가이드 (Phase 1~HITL)
+|-- code/
+|   |-- sdre_solver.py                 # ARE 솔버 + Newton-Kleinman + SDRE 클래스
+|   |-- aerosonde_model.py             # Aerosonde 6-DOF 모델 + 트림 + SDC
+|   |-- lqr_vs_sdre_comparison.py      # PID/LQR/SDRE 비교 시뮬레이션
+|   |-- requirements.txt               # Python 패키지 의존성
 ```
 
 ## Development Phases

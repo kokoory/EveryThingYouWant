@@ -196,3 +196,274 @@ Year 3 (실험 + 집필):
 ```
 
 검색 DB: Google Scholar, Semantic Scholar, AIAA arc, IEEE Xplore
+
+## 5. Detailed Study Guide by Layer
+
+### Layer 2: 최적 제어 - 구체적 공부 방법
+
+**Kirk 교재 읽기 순서:**
+- Ch 4: Variational calculus (변분법) - 오일러-라그랑주 방정식 유도를 손으로 해볼 것
+- Ch 5: Pontryagin minimum principle - 공역 변수(costate) 개념 이해
+- Ch 6: LQ problem - ARE가 왜 나오는지 직접 유도
+- Ch 7: Dynamic programming - HJB 방정식의 직관
+
+**Anderson & Moore 교재:**
+- Ch 1-3: LQR 기본, ARE 해의 존재성/유일성
+- Ch 4: 수치 해법 (Schur decomposition)
+- Appendix: Riccati 방정식 성질 정리 (SDRE 공부 시 계속 참조)
+
+**손으로 풀어볼 연습 문제:**
+```
+1. 1차 시스템 x_dot = ax + bu, J = integral(qx^2 + ru^2)dt
+   -> ARE를 직접 풀어 K 계산, 시스템 응답 스케치
+
+2. 2차 진자 시스템:
+   x_dot = [0 1; -g/l 0]x + [0; 1]u
+   Q = diag(10, 1), R = 1
+   -> scipy로 P, K 계산 후 손으로 검증
+
+3. HJB에서 ARE 유도:
+   V(x) = x^T P x 가정하고 HJB에 대입
+   -> 최적 u* = -R^{-1}B^T P x 유도 과정 전체를 수기로 작성
+```
+
+**자기 점검:** ARE 유도 과정을 보지 않고 20분 안에 수기로 완성할 수 있으면 합격.
+
+### Layer 3: 비선형 제어 - 가장 핵심적인 레이어
+
+**Slotine & Li 교재 읽기 (먼저):**
+- Ch 3: Phase plane analysis - 비선형 시스템의 직관
+- Ch 4: Lyapunov stability - **핵심 중의 핵심**
+  - 4.1: Lyapunov 직접법 정의
+  - 4.2: La Salle 불변 원리
+  - 4.3: 수렴 속도 분석
+- Ch 5: Feedback linearization
+- Ch 9: Adaptive control (SDRE와 비교 관점)
+
+**Khalil 교재 읽기 (이후):**
+- Ch 3: 기본 성질 (존재성, 유일성)
+- **Ch 4: Lyapunov stability** - Theorem 4.1~4.9 증명 숙지
+  - Theorem 4.1: 국소 안정성
+  - Theorem 4.2: 전역 안정성
+  - Theorem 4.4: La Salle 정리
+- **Ch 4.6: ISS (Input-to-State Stability)** - 논문 기여 1의 핵심
+  - ISS gain function
+  - 노이즈 바운드 -> 상태 바운드 관계
+- Ch 9: 입력-출력 안정성
+- Ch 14: 피드백 선형화
+
+**핵심 개념 체크리스트:**
+```
+[ ] Lyapunov 함수 V(x) 조건: V(0)=0, V(x)>0, V_dot(x)<0
+[ ] 안정 vs 점근 안정 vs 지수 안정 차이 설명 가능
+[ ] La Salle 불변 원리: V_dot<=0 (등호 허용) 일 때 사용법
+[ ] ISS 정의: ||x(t)|| <= beta(||x(0)||,t) + gamma(sup||w||)
+[ ] Lyapunov 함수 구성법: 에너지 함수, 이차형식 x^T P x
+[ ] 간접법 vs 직접법 차이와 각각의 한계
+```
+
+**연습: Lyapunov 함수 구성 방법론**
+
+```
+Step 1: 시스템 구조 파악
+  x_dot = f(x) 에서 에너지 관련 항 식별
+
+Step 2: 후보 V(x) 선택
+  가장 간단한 것부터: V = x^T P x (P > 0)
+  또는 에너지 함수: V = 운동에너지 + 위치에너지
+
+Step 3: V_dot 계산
+  V_dot = (dV/dx)^T * f(x)
+  항별로 부호 분석
+
+Step 4: 부호 확인
+  V_dot < 0 인지 확인
+  안 되면 V 수정 또는 La Salle 적용
+```
+
+### Layer 4: SDRE 이론 심화
+
+**논문 읽기 순서 (반드시 이 순서):**
+1. Cloutier (1997) - SDRE 개요 (전체 그림 파악)
+2. Cimen (2008) - 서베이 (기존 연구 지도)
+3. 양창덕 (2008) - SDC 분할 수치 방법, Newton-Kleinman
+4. Menon & Ohlmeyer (2001) - IGC-SDRE 미사일 적용
+5. Saluzzi (2025) - 오차 정량화, C-NK, 최적 SDC
+
+**SDC 분할 비유일성 예시 (2차 시스템으로 이해):**
+
+```
+비선형 시스템: x_dot = -x^3
+
+SDC 분할 방법 1: A(x) = -x^2
+  -> x_dot = (-x^2) * x = A(x) * x
+
+SDC 분할 방법 2: A(x) = -|x| * x (다른 분할)
+  -> 수학적으로는 같지만 SDRE에서 다른 P(x) 생성
+
+어떤 분할이 더 좋은가?
+  -> Saluzzi (2025)가 부분적으로 답을 제시
+  -> 완전한 해답은 아직 연구 공백 (박사 기여 가능)
+```
+
+**Newton-Kleinman 수치 예시 (2x2):**
+
+```
+A = [0 1; -2 -3], B = [0; 1], Q = diag(10,1), R = [1]
+
+Iteration 0:
+  P_0 = Q = diag(10,1)
+  K_0 = R^{-1} B^T P_0 = [0 1] * [10 0; 0 1] = [0, 1]
+  S_0 = A - B*K_0 = [0 1; -2 -3] - [0;1]*[0,1] = [0 1; -2 -4]
+
+  Lyapunov: S_0^T P_1 + P_1 S_0 = -(Q + K_0^T R K_0)
+  -> scipy.linalg.solve_continuous_lyapunov(S_0.T, RHS) -> P_1
+
+Iteration 1:
+  K_1 = R^{-1} B^T P_1
+  ... (보통 2~3회면 수렴)
+```
+
+### Layer 6: Switched Systems
+
+**Liberzon 교재:**
+- Ch 1: 개요 및 동기
+- **Ch 2: Stability under arbitrary switching** - Common Lyapunov Function
+- **Ch 3: Stability under constrained switching** - Dwell time 조건
+  - Theorem 3.1: 평균 체류 시간 조건
+  - 이 정리가 논문 기여 4의 핵심 도구
+
+**Dwell time 정리 (직관적 이해):**
+```
+모드 1: V_1(x) 감소, 모드 2: V_2(x) 감소
+전환 순간: V가 점프할 수 있음 (다른 Lyapunov 함수)
+
+V_2(x(t_switch)) <= mu * V_1(x(t_switch))   (mu >= 1)
+
+충분히 오래 한 모드에 머무르면 (dwell time > tau_D):
+  V 감소량 > 전환 시 V 점프량
+  -> 전체적으로 안정
+
+tau_D > ln(mu) / lambda_min
+  mu: 전환 시 V 점프 비율
+  lambda_min: 가장 느린 모드의 감소율
+```
+
+**3종 표적 모드 전환에 적용:**
+```
+모드 A (지상 고정): V_A(x) = x^T P_A x, 감소율 lambda_A
+모드 B (지상 이동): V_B(x) = x^T P_B x, 감소율 lambda_B
+모드 C (공중):      V_C(x) = x^T P_C x, 감소율 lambda_C
+
+전환 시 점프: mu_AB, mu_BC, mu_AC (P 행렬 차이에 의존)
+
+안정성 조건:
+  모드 A에 최소 tau_A 이상 머물러야 함
+  모드 B에 최소 tau_B 이상 머물러야 함
+  ...
+  
+이 tau 값들을 유도하는 것이 논문 기여 4
+```
+
+### Layer 7: Vision/EKF
+
+**핀홀 카메라 LOS 변환:**
+```
+픽셀 좌표 (u_px, v_px) -> LOS 각도 (lambda_az, lambda_el)
+
+lambda_az = atan2(u_px - cx, fx)
+lambda_el = atan2(v_px - cy, fy)
+
+fx, fy: 초점 거리 (픽셀 단위)
+cx, cy: 주점 (principal point)
+
+LOS rate:
+  lambda_dot = (lambda(t) - lambda(t-dt)) / dt  (1차 차분)
+  또는 EKF로 추정 (노이즈 제거)
+```
+
+**EKF for 표적 추적:**
+```
+상태: x_kf = [x_tgt, y_tgt, vx_tgt, vy_tgt]
+
+프로세스 모델 (등속 가정):
+  x_kf(k+1) = F * x_kf(k) + w
+  F = [1 0 dt 0; 0 1 0 dt; 0 0 1 0; 0 0 0 1]
+
+측정 모델:
+  z = h(x_kf) + v
+  z = [lambda_az, lambda_el]  (카메라에서 직접 측정)
+  h(x) = [atan2(y_tgt, x_tgt), atan2(-z_tgt, sqrt(x^2+y^2))]
+
+주요 튜닝:
+  Q_kf: 프로세스 노이즈 (표적 기동성에 비례)
+  R_kf: 측정 노이즈 (카메라 해상도와 YOLO 정밀도에 의존)
+```
+
+## 6. Milestone Checkpoints
+
+### Year 1: 기초 구축
+
+| Month | 목표 | 자기 점검 |
+|-------|------|----------|
+| 1-2 | Slotine MIT 강의 완강 | Lyapunov 함수를 간단한 시스템에 직접 구성 가능? |
+| 3-4 | Khalil Ch4 안정성 | ISS 정의를 보지 않고 설명 가능? |
+| 5-6 | Anderson & Moore LQR/ARE | ARE를 HJB에서 유도하는 과정을 수기로 완성? |
+| 7-8 | Beard & McLain + 코드 | Aerosonde 트림 계산 + SDRE 시뮬 직접 실행? |
+| 9-10 | SDRE 논문 5편 정독 | SDC 분할 비유일성을 예시로 설명 가능? |
+| 11-12 | Phase 1 시뮬 완성 | PID vs LQR vs SDRE 비교 그래프 생성? |
+
+### Year 2: 논문 핵심
+
+| Month | 목표 | 자기 점검 |
+|-------|------|----------|
+| 1-2 | Liberzon Ch2-3 | Dwell time 정리를 증명 스케치 가능? |
+| 3-4 | LMI 프로그래밍 | MATLAB/Python으로 Common Lyapunov Function 계산? |
+| 5-6 | EKF 설계 + 구현 | 표적 추적 EKF가 시뮬에서 동작? |
+| 7-8 | LOS 불확실성 모델링 | 카메라 노이즈 -> miss distance 관계 수식화? |
+| 9-10 | Phase 2-3 (C++ + KV260) | KV260 R5에서 SDRE 1kHz 달성? |
+| 11-12 | 학회 논문 투고 | 첫 논문 draft 완성? |
+
+### Year 3: 실험 + 집필
+
+| Month | 목표 | 자기 점검 |
+|-------|------|----------|
+| 1-3 | Phase 4 (HITL) | Jetson+KV260+Pixhawk 통합 동작? |
+| 4-6 | Phase 5 (실비행) | Skywalker X8에서 SDRE 비행 성공? |
+| 7-9 | 논문 집필 | Ch1-6 draft 완성? |
+| 10-12 | 수정 + 투고 | 최종 논문 제출? |
+
+## 7. Mathematical Prerequisites Quick Reference
+
+### 행렬 양의 정치 (Positive Definite)
+
+```
+P > 0 (양의 정치) <==>
+  1. 모든 고유값 > 0
+  2. x^T P x > 0 for all x != 0
+  3. 모든 leading principal minor > 0 (Sylvester)
+  4. P = L L^T 형태로 Cholesky 분해 가능
+
+P >= 0 (양의 준정치):
+  고유값 >= 0 (0 허용)
+```
+
+### Schur Complement
+
+```
+행렬 M = [A B; C D]
+
+M > 0 <==> A > 0 and (D - C A^{-1} B) > 0
+       <==> D > 0 and (A - B D^{-1} C) > 0
+
+LMI (선형 행렬 부등식) 문제에서 핵심 도구
+```
+
+### Lyapunov 방정식
+
+```
+연속: A^T P + P A = -Q   (A 안정, Q > 0 -> P > 0 유일해)
+이산: A^T P A - P = -Q
+
+풀이: scipy.linalg.solve_continuous_lyapunov(A, Q)
+```

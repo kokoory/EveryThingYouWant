@@ -209,3 +209,249 @@ dt = 0.001초 기준 --> 200*dt = 0.2초 = 5Hz
 --> 매 루프 ARE 풀 필요 없이 5~10Hz로도 충분
 --> KV260 연산 부담 대폭 감소
 ```
+
+## 7. Software Architecture Detail
+
+### KV260 Cortex-A53 (Linux) - 통신/관리
+
+```
+[systemd services]
+  |
+  +-- mavlink_bridge.service
+  |     pymavlink으로 Pixhawk USB MAVLink 파싱
+  |     ATTITUDE, LOCAL_POSITION_NED 메시지 수신
+  |     공유 메모리(shared memory)로 R5에 전달
+  |
+  +-- jetson_comm.service
+  |     UART 115200으로 Jetson LOS 데이터 수신
+  |     프로토콜: [header][lambda][lambda_dot][target_state][checksum]
+  |     공유 메모리로 R5에 전달
+  |
+  +-- mode_manager.service
+  |     모드 상태 머신 관리
+  |     Jetson 락온 신호 수신 -> 공격 모드 트리거
+  |     R5에 모드 전환 명령
+  |
+  +-- logger.service
+        비행 데이터 로깅 (CSV/binary)
+        post-flight 분석용
+```
+
+### KV260 Cortex-R5 (Bare-metal) - SDRE 실시간 루프
+
+```
+main_loop() @ 1kHz (Timer Interrupt):
+  |
+  +-- 1. read_shared_memory()
+  |       MAVLink 상태 (phi, theta, psi, p, q, r, u, v, w)
+  |       Jetson LOS 데이터 (lambda, lambda_dot)
+  |       현재 모드
+  |
+  +-- 2. if (mode == ATTACK):
+  |       compute_sdc(x)         --> A(x), B(x)
+  |       newton_kleinman(A, B)  --> P, K
+  |       u = -K * x             --> 서보 명령
+  |       can_send(u)            --> DroneCAN 전송
+  |
+  |   elif (mode == NORMAL):
+  |       // Pixhawk가 CAN 마스터, R5는 모니터링만
+  |       pass
+  |
+  +-- 3. log_to_shared_memory()
+          P 행렬, K 행렬, u, 풀이 시간 기록
+```
+
+### Jetson Orin NX (Linux) - 비전 처리
+
+```
+[main pipeline]
+  |
+  +-- camera_manager (thread 1)
+  |     CSI0: IMX219 광각 캡처 (30fps)
+  |     CSI1: IMX477 망원 캡처 (30fps)
+  |     모드에 따라 활성 카메라 전환
+  |
+  +-- yolo_detector (thread 2)
+  |     TensorRT 최적화 YOLO
+  |     입력: 카메라 프레임
+  |     출력: bounding box, confidence, class
+  |
+  +-- los_calculator (thread 3)
+  |     픽셀 좌표 -> LOS angle 변환
+  |     연속 프레임 차분 -> LOS rate 계산
+  |     Kalman filter로 노이즈 제거
+  |
+  +-- uart_sender (thread 4)
+        KV260으로 LOS 데이터 전송 @ 100Hz
+```
+
+## 8. State Machine for Mode Transitions
+
+```
+                    +--------+
+         power on   |  INIT  |  하드웨어 초기화, 센서 체크
+                    +---+----+
+                        |
+                        v
+                    +--------+
+         RC 입력    | MANUAL |  조종기 직접 제어 (Pixhawk PID)
+                    +---+----+
+                        |  스위치 전환
+                        v
+                  +-----------+
+                  | ALT_HOLD  |  고도 유지 (Pixhawk)
+                  +-----+-----+
+                        |  AUTO 스위치
+                        v
+                  +-----------+
+                  | AUTO_NAV  |  웨이포인트 비행 (Pixhawk)
+                  +-----+-----+
+                        |  표적 영역 진입
+                        v
+                  +-----------+
+                  |  SEARCH   |  IMX219 광각으로 표적 탐색 (Jetson YOLO)
+                  +-----+-----+
+                        |  YOLO 검출 성공 (confidence > 0.7)
+                        v
+                  +-----------+
+                  |  TRACK    |  IMX477 망원으로 정밀 추적
+                  |           |  LOS rate 안정화 대기
+                  +-----+-----+
+                        |  LOS rate 안정 + 거리 < threshold
+                        v
+                  +-----------+
+                  |  ATTACK   |  KV260 SDRE 제어권 인수
+                  |           |  DroneCAN 마스터 전환
+                  |           |  PNG + SDRE 교전
+                  +-----+-----+
+                        |  교전 완료 or 실패
+                        v
+                  +-----------+
+                  |   RTL     |  Pixhawk 제어권 복귀
+                  |           |  Return to Launch
+                  +-----------+
+
+페일세이프 전환 (어느 상태에서든):
+  RC 신호 끊김      --> RTL
+  배터리 < 20%      --> RTL
+  IMU 이상          --> MANUAL (RC 우선)
+  SDRE 발산 감지    --> ALT_HOLD (Pixhawk PID 복귀)
+  CAN 버스 에러     --> MANUAL
+```
+
+### 전환 조건 상세
+
+| From | To | 조건 | 타임아웃 |
+|------|----|------|---------|
+| SEARCH | TRACK | YOLO confidence > 0.7, 3프레임 연속 | 60초 탐색 실패 -> RTL |
+| TRACK | ATTACK | LOS rate 분산 < threshold, 거리 < 1km | 30초 안정화 실패 -> SEARCH |
+| ATTACK | RTL | miss distance 계산 완료 or 고도 < 50m | 교전 시간 > 30초 -> RTL |
+
+## 9. DroneCAN Bus Master Handover Protocol
+
+```
+일반 비행 시:
+  Pixhawk: Node ID 1 (마스터), 서보 명령 전송 @ 50Hz
+  KV260:   Node ID 2 (리스너), 버스 모니터링만
+
+공격 모드 전환 과정 (5단계):
+  1. KV260 A53 -> R5: ATTACK 모드 명령
+  2. KV260 -> Pixhawk: MAVLink COMMAND_LONG (SDRE_TAKEOVER)
+  3. Pixhawk: 서보 명령 전송 중지, 리스너로 전환
+  4. KV260 R5: DroneCAN 서보 명령 전송 시작 @ 200Hz
+  5. KV260 -> Pixhawk: MAVLink HEARTBEAT에 SDRE_ACTIVE 플래그
+
+복귀 과정 (역순):
+  1. KV260: 교전 완료 판단
+  2. KV260: 서보 명령 전송 중지
+  3. KV260 -> Pixhawk: MAVLink COMMAND_LONG (SDRE_RELEASE)
+  4. Pixhawk: 서보 명령 재개, 마스터 복귀
+  5. 모드 -> RTL
+
+CAN 버스 에러 처리:
+  Bus-off 감지: KV260 AXI CAN IP의 에러 카운터 모니터링
+  복구: 자동 bus-off recovery (128회 11-recessive bit 후)
+  타임아웃: 서보 명령 100ms 미수신 시 -> 페일세이프
+```
+
+## 10. Timing Analysis (WCET)
+
+```
+1kHz 제어 루프 타이밍 버짓 (최악 case):
+
+[0us]     Timer interrupt 발생
+[10us]    Shared memory 읽기 (MAVLink + LOS 데이터)
+[60us]    A(x), B(x) 수치 야코비안 (12x12)
+[560us]   Newton-Kleinman ARE (R5 software, worst case 3 iterations)
+  or
+[110us]   Newton-Kleinman ARE (PL FPGA 가속)
+[570us]   K = R^{-1} B^T P 계산 (행렬 곱)
+[580us]   u = -Kx 계산
+[680us]   DroneCAN 프레임 구성 + 전송
+[700us]   로깅 데이터 기록
+[700us]   ========= 루프 완료 =========
+
+여유: 300us (S/W) or 890us (FPGA)
+Jitter 버짓: < 50us (Timer interrupt 지터)
+```
+
+### MAVLink 메시지 스케줄링
+
+```
+Pixhawk 전송 주기:
+  ATTITUDE:            200Hz (5ms)   --> phi, theta, psi, p, q, r
+  LOCAL_POSITION_NED:   50Hz (20ms)  --> x, y, z, vx, vy, vz
+  VFR_HUD:             50Hz (20ms)  --> airspeed, groundspeed
+
+KV260 A53 수신 + 파싱:
+  USB bulk transfer latency: ~1ms
+  파싱 + shared memory 쓰기: ~0.5ms
+  총 레이턴시: ~1.5ms
+
+R5 SDRE는 최신 MAVLink 데이터를 사용하되,
+새 데이터가 없으면 이전 값을 재사용 (200Hz 수신, 1kHz 사용)
+```
+
+## 11. Data Logging Architecture
+
+### Phase별 로깅 대상
+
+| Phase | 로깅 대상 | 형식 | 저장 위치 |
+|-------|----------|------|----------|
+| Phase 1 (Python) | 전체 상태, 제어, P, K, 풀이시간 | CSV/numpy | PC |
+| Phase 4 (HITL) | R5 루프 타이밍, CAN 메시지, MAVLink | binary | KV260 SD |
+| Phase 5 (비행) | 위와 동일 + GPS, IMU raw, 카메라 LOS | binary + video | KV260 SD |
+
+### 로그 포맷
+
+```
+Binary log record (고정 크기, 빠른 쓰기):
+  [timestamp_us: uint64]      8 bytes
+  [state[12]: float32]       48 bytes  (u,v,w,p,q,r,phi,theta,psi,pn,pe,pd)
+  [control[4]: float32]      16 bytes  (de,da,dr,dt)
+  [P_diag[12]: float32]      48 bytes  (P 대각 성분)
+  [K_flat[48]: float32]     192 bytes  (K 전체, 4x12)
+  [solve_time_us: uint32]     4 bytes
+  [nk_iterations: uint8]      1 byte
+  [mode: uint8]               1 byte
+  [los_lambda: float32]       4 bytes
+  [los_lambda_dot: float32]   4 bytes
+  ---
+  Total: 326 bytes/record
+  @ 1kHz = 326 KB/s = ~1.1 GB/hour
+```
+
+### Post-flight 분석 파이프라인
+
+```
+1. 바이너리 로그 -> Python 파서 -> pandas DataFrame
+2. 시간 동기화 (MAVLink timestamp 기준)
+3. 분석:
+   - 상태 추적 오차 (RMSE, 시계열)
+   - 제어 입력 히스토그램
+   - SDRE 풀이 시간 분포
+   - P, K 행렬 변화 추이
+   - LOS rate 수렴 그래프 (표적 교전 시)
+4. 그래프 생성 (matplotlib)
+5. 논문 Figure로 직접 사용
+```

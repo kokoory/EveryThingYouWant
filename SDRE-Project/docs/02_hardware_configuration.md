@@ -199,3 +199,189 @@ PX4 파라미터 설정:
 MAV_DATA_STREAM_EXTRA1 -> ATTITUDE 200Hz
 MAV_DATA_STREAM_RAWSENSORS -> 200Hz
 ```
+
+## 8. KV260 Development Environment Setup
+
+### 8-1. Vitis/Vivado 설치
+
+```bash
+# 권장 버전: Vitis 2023.2 (KV260 공식 지원)
+# 다운로드: https://www.xilinx.com/support/download/index.html/content/xilinx/en/downloadNav/vivado-design-tools.html
+
+# Ubuntu 22.04 LTS 권장
+sudo apt update
+sudo apt install -y libtinfo5 libncurses5 xterm
+
+# Vitis 통합 설치 (Vivado + Vitis HLS + PetaLinux 포함)
+# 설치 용량: ~100GB
+chmod +x Xilinx_Unified_2023.2_*_Lin64.bin
+./Xilinx_Unified_2023.2_*_Lin64.bin
+# 설치 시 "Vitis" 선택 (Vivado, HLS 자동 포함)
+
+# 환경 설정
+source /tools/Xilinx/Vitis/2023.2/settings64.sh
+```
+
+### 8-2. KV260 PetaLinux 이미지
+
+```bash
+# 공식 BSP 다운로드
+# https://www.xilinx.com/support/download/index.html/content/xilinx/en/downloadNav/embedded-design-tools.html
+
+# PetaLinux 프로젝트 생성
+petalinux-create -t project -s xilinx-kv260-starterkit-v2023.2.bsp
+cd xilinx-kv260-starterkit-v2023.2
+
+# 빌드 (30분~1시간)
+petalinux-build
+
+# SD 카드 이미지 생성
+petalinux-package --boot --u-boot
+```
+
+### 8-3. R5 Bare-metal 개발 (Vitis IDE)
+
+```
+1. Vitis IDE 실행
+2. File -> New -> Application Project
+3. Platform: kv260_custom (또는 기본 제공)
+4. Processor: psu_cortexr5_0
+5. OS: standalone (bare-metal)
+6. Template: Empty Application
+
+R5 프로젝트 구조:
+  src/
+  |-- main.c          # SDRE 메인 루프 (Timer ISR)
+  |-- sdre_solver.c   # Newton-Kleinman C 구현
+  |-- matrix_ops.c    # CMSIS-DSP 행렬 연산 래퍼
+  |-- can_driver.c    # AXI CAN 드라이버
+  |-- shared_mem.c    # A53과 공유 메모리 인터페이스
+```
+
+## 9. Vitis HLS Guide for SDRE
+
+### 9-1. HLS용 C++ 행렬 연산
+
+```cpp
+// hls_matrix.h - HLS 합성 가능한 행렬 연산
+#include <hls_math.h>
+
+#define N_STATE 4   // 종방향 4차
+#define N_INPUT 2
+
+typedef float mat_t;
+
+// 4x4 행렬 곱: C = A * B
+void mat_mul_4x4(
+    mat_t A[N_STATE][N_STATE],
+    mat_t B[N_STATE][N_STATE],
+    mat_t C[N_STATE][N_STATE]
+) {
+    #pragma HLS PIPELINE II=1
+    #pragma HLS ARRAY_PARTITION variable=A complete dim=2
+    #pragma HLS ARRAY_PARTITION variable=B complete dim=1
+
+    for (int i = 0; i < N_STATE; i++) {
+        for (int j = 0; j < N_STATE; j++) {
+            mat_t sum = 0;
+            for (int k = 0; k < N_STATE; k++) {
+                sum += A[i][k] * B[k][j];
+            }
+            C[i][j] = sum;
+        }
+    }
+}
+```
+
+### 9-2. Lyapunov 방정식 솔버 (HLS)
+
+```cpp
+// Newton-Kleinman 1 iteration을 HLS로 가속
+// S^T * P + P * S = -RHS  (Lyapunov)
+// Bartels-Stewart 알고리즘의 단순화 버전
+
+void lyapunov_solve_4x4(
+    mat_t S[N_STATE][N_STATE],      // 입력: 폐루프 행렬
+    mat_t RHS[N_STATE][N_STATE],    // 입력: -(Q + K^T R K)
+    mat_t P[N_STATE][N_STATE]       // 출력: 해 P
+) {
+    #pragma HLS INTERFACE s_axilite port=return
+    #pragma HLS INTERFACE m_axi port=S
+    #pragma HLS INTERFACE m_axi port=RHS
+    #pragma HLS INTERFACE m_axi port=P
+
+    // Schur decomposition of S -> Q * T * Q^T
+    // (실제 구현에서는 Xilinx QR IP 또는 직접 Givens rotation)
+    // 여기서는 간략화
+
+    // 4x4의 경우 직접 반복법으로도 충분히 빠름
+    mat_t P_new[N_STATE][N_STATE];
+    mat_t P_old[N_STATE][N_STATE];
+
+    // 초기화
+    for (int i = 0; i < N_STATE; i++)
+        for (int j = 0; j < N_STATE; j++)
+            P_old[i][j] = RHS[i][j];
+
+    // 반복법 (fixed-point iteration)
+    for (int iter = 0; iter < 50; iter++) {
+        #pragma HLS PIPELINE
+        // P_new = S^T * P_old + P_old * S + RHS 를 0으로
+        // ... (실제 구현)
+    }
+}
+```
+
+### 9-3. 합성 보고서 해석
+
+```
+합성 후 확인할 것:
+
+1. Latency (클럭 사이클)
+   - 4x4 Lyapunov: 목표 < 500 cycles @ 300MHz = 1.67us
+   - 12x12 Lyapunov: 목표 < 5000 cycles = 16.7us
+
+2. Resource Usage
+   - DSP: < 200 (총 1,248개 중)
+   - BRAM: < 20 (총 144개 중)
+   - LUT: < 50K (총 256K 중)
+
+3. Timing
+   - 목표 클럭: 300MHz (3.33ns)
+   - Timing met? (WNS > 0)
+
+4. II (Initiation Interval)
+   - 파이프라인 II=1: 매 클럭 새 데이터 처리 가능
+```
+
+## 10. Bill of Materials (BOM)
+
+| # | 부품 | 모델 | 수량 | 단가 | 소계 | 비고 |
+|---|------|------|------|------|------|------|
+| 1 | FPGA 보드 | AMD Kria KV260 | 1 | $250 | $250 | 메인 제어 |
+| 2 | 비전 보드 | Jetson Orin NX (이미 보유) | 1 | $0 | $0 | 보유 |
+| 3 | 비행 컨트롤러 | Pixhawk 6C | 1 | $250 | $250 | PX4, 내장 IMU |
+| 4 | 광각 카메라 | Sony IMX219 모듈 | 1 | $25 | $25 | 탐색용 |
+| 5 | 망원 카메라 | RPi HQ Camera (IMX477) | 1 | $50 | $50 | 추적용 |
+| 6 | 망원 렌즈 | 16mm C-mount (10MP) | 1 | $30 | $30 | HQ Cam용 |
+| 7 | 광각 렌즈 | 6mm C-mount (3MP) | 1 | $20 | $20 | HQ Cam용 |
+| 8 | CAN 트랜시버 | SN65HVD230 | 2 | $2 | $4 | KV260 + 예비 |
+| 9 | DroneCAN 서보 | Hitec D-Series x3 | 3 | $80 | $240 | de, da, dr |
+| 10 | DroneCAN ESC | Zubax Myxa | 1 | $150 | $150 | 추력 |
+| 11 | 종단저항 | 120ohm | 2 | $1 | $2 | CAN 버스 양끝 |
+| 12 | 기체 | Skywalker X8 | 1 | $300 | $300 | 실비행용 |
+| 13 | RC 수신기 | FrSky R-XSR | 1 | $30 | $30 | Pixhawk SBUS |
+| 14 | RC 송신기 | FrSky Taranis (보유 가정) | 1 | $0 | $0 | |
+| 15 | 배터리 | 4S 5000mAh LiPo | 2 | $50 | $100 | |
+| 16 | SD 카드 | 32GB UHS-I | 2 | $10 | $20 | KV260 + 로깅 |
+| | | | | **합계** | **~$1,471** | |
+
+### Phase별 구매 순서
+
+```
+Phase 1 (Python 시뮬): 추가 구매 없음 ($0)
+Phase 2 (C++ 포팅):    Teensy 4.1 ($30) - 선택사항
+Phase 3 (FPGA):        KV260 ($250)
+Phase 4 (비전 통합):   카메라 x2 + 렌즈 ($125)
+Phase 5 (실비행):      Pixhawk + 서보 + ESC + 기체 + 배터리 (~$1,070)
+```
