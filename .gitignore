@@ -26,6 +26,7 @@ build/
 out/
 *.o
 *.exe
+*.spec.bak
 
 # Logs
 *.log

@@ -49,7 +49,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+import os as _os
+_base = Path(_os.environ.get("RGM_BASE_DIR", Path(__file__).parent.parent))
+FRONTEND_DIR = _base / "frontend"
 
 
 # ── Frontend ──
@@ -218,7 +220,7 @@ async def export_csv():
 
 # ── Attachments ──
 
-UPLOAD_DIR = Path(__file__).parent.parent / "data" / "attachments"
+UPLOAD_DIR = DATA_DIR / "attachments"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 

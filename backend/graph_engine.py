@@ -6,6 +6,7 @@ Supports versioning (baselines), suspect link propagation, and tree views.
 
 import copy
 import json
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -27,7 +28,7 @@ from .models import (
     UpdateNodeRequest,
 )
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = Path(os.environ.get("RGM_DATA_DIR", Path(__file__).parent.parent / "data"))
 
 
 class GraphEngine:
