@@ -34,6 +34,11 @@ npm-debug.log*
 # Data (runtime generated)
 data/
 
+# Python virtual environment
+venv/
+env/
+.venv/
+
 # Misc
 *.tmp
 *.bak

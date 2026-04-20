@@ -1,0 +1,17 @@
+# Requirements Graph Manager - Python 3.12 Dependencies
+# Tested with Python 3.12.x
+
+# Web framework
+fastapi==0.115.5
+uvicorn==0.32.1
+python-multipart==0.0.18
+
+# Data validation
+pydantic==2.10.3
+
+# Graph engine
+networkx==3.4.2
+
+# Template & visualization
+jinja2==3.1.4
+pyvis==0.3.2
