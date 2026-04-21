@@ -53,7 +53,11 @@ class GraphEngine:
             content=req.content,
             node_type=req.node_type,
             priority=req.priority,
-            verification=req.verification,
+            verification=req.verification if req.verification else ["test"],
+            method=req.method,
+            ft_no=req.ft_no,
+            attachment_note=req.attachment_note,
+            etc=req.etc,
             author=req.author,
             tags=req.tags,
             subsystem=req.subsystem,
@@ -414,37 +418,140 @@ class GraphEngine:
     # ── Export ──
 
     def export_tree_csv(self) -> bytes:
-        """Export tree view as CSV bytes with UTF-8 BOM for Excel compatibility."""
+        """Export all nodes as CSV with new format: ID, Content, Analyze, Inspection, Demonstration, Test, Method, FT_No, Attachment, ETC, Subsystem, Type, Status, Priority, Version, Updated."""
         import csv
         import io
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Level", "ID", "Title", "Type", "Status", "Priority", "Verification", "Subsystem", "Version", "Updated"])
+        writer.writerow([
+            "ID", "Content",
+            "Analyze", "Inspection", "Demonstration", "Test",
+            "Method", "FT_No", "Attachment", "ETC",
+            "Subsystem", "Type", "Status", "Priority", "Version", "Updated",
+        ])
 
-        tree = self.get_tree_view()
-        def flatten(node, level=0):
-            indent = "    " * level
-            nid = node.get("id", "")
-            data = self.graph.nodes.get(nid, {})
+        for nid, data in self.graph.nodes(data=True):
+            verif = data.get("verification", []) or []
+            if isinstance(verif, str):
+                verif = [verif]
+            analyze_mark = "X" if "analysis" in verif else ""
+            inspection_mark = "X" if "inspection" in verif else ""
+            demo_mark = "X" if "demonstration" in verif else ""
+            test_mark = "X" if "test" in verif else ""
+
+            # Build content (title + content if both present and different)
+            title = data.get("title", "")
+            content = data.get("content", "")
+            combined = title if title == content else (f"{title}\n{content}" if content else title)
+
+            attachments = data.get("attachments", [])
+            attach_summary = "; ".join(a.get("filename", "") for a in attachments) if attachments else data.get("attachment_note", "")
+
             writer.writerow([
-                level,
-                nid,
-                indent + node.get("title", ""),
-                node.get("node_type", ""),
-                node.get("status", ""),
-                node.get("priority", ""),
-                node.get("verification", ""),
-                node.get("subsystem", ""),
-                data.get("version", 1) if nid in self.graph.nodes else "",
-                data.get("updated_at", "") if nid in self.graph.nodes else "",
+                nid, combined,
+                analyze_mark, inspection_mark, demo_mark, test_mark,
+                data.get("method", ""),
+                data.get("ft_no", ""),
+                attach_summary,
+                data.get("etc", ""),
+                data.get("subsystem", ""),
+                data.get("node_type", ""),
+                data.get("status", ""),
+                data.get("priority", ""),
+                data.get("version", 1),
+                data.get("updated_at", ""),
             ])
-            for child in node.get("children", []):
-                flatten(child, level + 1)
-
-        for root in tree:
-            flatten(root)
         # UTF-8 BOM + content for Excel compatibility
         return b'\xef\xbb\xbf' + output.getvalue().encode('utf-8')
+
+    def import_nodes_csv(self, csv_bytes: bytes) -> dict:
+        """Import nodes from CSV. Subsystem and links are NOT imported."""
+        import csv as csv_mod
+        import io
+
+        if csv_bytes.startswith(b'\xef\xbb\xbf'):
+            csv_bytes = csv_bytes[3:]
+        text = csv_bytes.decode('utf-8-sig', errors='replace')
+        reader = csv_mod.DictReader(io.StringIO(text))
+
+        def find_col(row, *names):
+            for name in names:
+                for key in row:
+                    if key and key.strip().lower() == name.lower():
+                        return row[key] or ""
+            return ""
+
+        def is_checked(val):
+            if not val:
+                return False
+            s = str(val).strip().lower()
+            return s not in ("", "0", "no", "n", "false", "-")
+
+        added = 0
+        skipped = 0
+        errors = []
+
+        for i, row in enumerate(reader, 2):
+            try:
+                nid = find_col(row, "ID").strip()
+                content = find_col(row, "Content").strip()
+                if not nid and not content:
+                    continue
+
+                verification = []
+                if is_checked(find_col(row, "Analyze", "Analysis")):
+                    verification.append("analysis")
+                if is_checked(find_col(row, "Inspection")):
+                    verification.append("inspection")
+                if is_checked(find_col(row, "Demonstration", "Demo")):
+                    verification.append("demonstration")
+                if is_checked(find_col(row, "Test")):
+                    verification.append("test")
+                if not verification:
+                    verification = ["test"]
+
+                method = find_col(row, "Method").strip()
+                ft_no = find_col(row, "FT_No", "FT No", "FT-No", "FTNo").strip()
+                attachment_note = find_col(row, "Attachment").strip()
+                etc = find_col(row, "ETC", "Note", "Notes").strip()
+
+                if not nid:
+                    nid = f"REQ-{uuid.uuid4().hex[:6].upper()}"
+
+                if nid in self.graph.nodes:
+                    skipped += 1
+                    continue
+
+                title = content.split("\n")[0][:100] if content else nid
+                now = datetime.now()
+                node_data = RequirementNode(
+                    id=nid,
+                    title=title,
+                    content=content or title,
+                    node_type=NodeType.REQUIREMENT,
+                    priority=Priority.MEDIUM,
+                    verification=verification,
+                    method=method,
+                    ft_no=ft_no,
+                    attachment_note=attachment_note,
+                    etc=etc,
+                    author="csv_import",
+                    subsystem="SS",
+                    created_at=now,
+                    updated_at=now,
+                ).model_dump(mode="json")
+                self.graph.add_node(nid, **node_data)
+                self._record_change("add_node", nid, None, node_data)
+                added += 1
+            except Exception as e:
+                errors.append(f"Row {i}: {str(e)}")
+
+        return {
+            "added": added,
+            "skipped": skipped,
+            "errors": errors,
+            "total_rows": added + skipped + len(errors),
+        }
 
     # ── Statistics ──
 

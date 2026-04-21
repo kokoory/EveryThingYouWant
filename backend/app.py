@@ -221,6 +221,33 @@ async def export_csv():
     )
 
 
+@app.get("/api/export/csv/template")
+async def download_csv_template():
+    """Download a blank CSV template for import."""
+    import io
+    import csv as csv_mod
+    out = io.StringIO()
+    w = csv_mod.writer(out)
+    w.writerow(["ID", "Content", "Analyze", "Inspection", "Demonstration", "Test", "Method", "FT_No", "Attachment", "ETC"])
+    w.writerow(["SYS-001", "시스템은 전원 On/Off를 제어할 수 있어야 한다", "", "", "", "X", "", "FT-001", "", ""])
+    w.writerow(["SYS-002", "3초 이내 비상 정지가 가능해야 한다", "X", "", "X", "X", "응답시간 측정", "FT-002", "test_plan.pdf", "Critical"])
+    w.writerow(["SYS-003", "사용자 인증 수행", "", "X", "", "X", "", "FT-003", "", ""])
+    content = b'\xef\xbb\xbf' + out.getvalue().encode('utf-8')
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=import_template.csv"},
+    )
+
+
+@app.post("/api/import/csv")
+async def import_csv(file: UploadFile = File(...)):
+    content = await file.read()
+    result = engine.import_nodes_csv(content)
+    engine.save()
+    return result
+
+
 # ── Attachments ──
 
 UPLOAD_DIR = DATA_DIR / "attachments"
@@ -348,7 +375,10 @@ async def generate_report():
         nt = n.get("node_type", "")
         color = type_colors.get(nt, "#888")
         pri_color = priority_colors.get(n.get("priority", ""), "#888")
-        verif = verif_labels.get(n.get("verification", "test"), n.get("verification", ""))
+        verif_raw = n.get("verification", ["test"])
+        if isinstance(verif_raw, str):
+            verif_raw = [verif_raw]
+        verif = ", ".join(verif_labels.get(v, v) for v in verif_raw) if verif_raw else ""
 
         # Links
         node_links = engine.get_node_links(nid)
@@ -653,7 +683,7 @@ async def load_demo_data():
         engine.add_node(CreateNodeRequest(
             id=rid, title=title, content=content,
             node_type=ntype, priority=priority,
-            verification=verif, author="시스템", subsystem=subsystem,
+            verification=[verif], author="시스템", subsystem=subsystem,
         ))
 
     # Traceability links

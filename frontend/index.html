@@ -431,7 +431,10 @@
         </h1>
         <div class="header-actions">
             <button class="btn" onclick="loadDemoData()">Demo Data</button>
-            <button class="btn" onclick="exportCSV()">CSV</button>
+            <button class="btn" onclick="exportCSV()">CSV ↓</button>
+            <button class="btn" onclick="document.getElementById('csv-import').click()">CSV ↑</button>
+            <input type="file" id="csv-import" accept=".csv" style="display:none" onchange="importCSV(this)">
+            <button class="btn" onclick="downloadCSVTemplate()">Template</button>
             <button class="btn" onclick="exportGraphPDF()">PDF</button>
             <button class="btn btn-primary" onclick="openModal('node')">+ Node</button>
             <button class="btn" onclick="openModal('link')">+ Link</button>
@@ -548,13 +551,29 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Verification Method</label>
-                    <select id="node-verification">
-                        <option value="inspection">Inspection (검사)</option>
-                        <option value="analysis">Analysis (분석)</option>
-                        <option value="demonstration">Demonstration (시연)</option>
-                        <option value="test" selected>Test (시험)</option>
-                    </select>
+                    <label>Verification Methods (중복 선택 가능)</label>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap;padding:6px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px">
+                        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="checkbox" id="node-v-analysis" value="analysis"> Analyze</label>
+                        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="checkbox" id="node-v-inspection" value="inspection"> Inspection</label>
+                        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="checkbox" id="node-v-demonstration" value="demonstration"> Demonstration</label>
+                        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="checkbox" id="node-v-test" value="test" checked> Test</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Method</label>
+                    <input id="node-method" placeholder="상세 방법">
+                </div>
+                <div class="form-group">
+                    <label>FT_No</label>
+                    <input id="node-ft-no" placeholder="FT 번호">
+                </div>
+                <div class="form-group">
+                    <label>Attachment (참조명)</label>
+                    <input id="node-attachment-note" placeholder="첨부파일명/참조">
+                </div>
+                <div class="form-group">
+                    <label>ETC</label>
+                    <input id="node-etc" placeholder="기타 사항">
                 </div>
                 <div class="form-group">
                     <label>Subsystem</label>
@@ -797,7 +816,7 @@
                     <td><span class="type-badge type-${n.node_type}">${n.node_type}</span></td>
                     <td>${n.status === 'suspect' ? '<span class="suspect-badge">SUSPECT</span>' : n.status}</td>
                     <td>${n.priority}</td>
-                    <td>${(n.verification || 'test').charAt(0).toUpperCase()}</td>
+                    <td style="font-size:11px">${(Array.isArray(n.verification) ? n.verification : [n.verification || 'test']).map(x => x.charAt(0).toUpperCase()).join(',')}</td>
                     <td>${n.subsystem || ''}</td>
                     <td>v${n.version || 1}</td>
                     <td style="font-size:11px;color:var(--text-secondary)">${n.updated_at ? new Date(n.updated_at).toLocaleString('ko-KR') : '-'}</td>
@@ -958,9 +977,13 @@
                     <div class="value">v${node.version || 1} <small style="color:var(--text-secondary)">(${node.updated_at ? new Date(node.updated_at).toLocaleString('ko-KR') : '-'})</small></div>
                 </div>
                 <div class="detail-field">
-                    <label>Verification Method</label>
+                    <label>Verification Methods</label>
                     <div class="value">${verificationLabel(node.verification)}</div>
                 </div>
+                ${node.method ? `<div class="detail-field"><label>Method</label><div class="value">${node.method}</div></div>` : ''}
+                ${node.ft_no ? `<div class="detail-field"><label>FT_No</label><div class="value">${node.ft_no}</div></div>` : ''}
+                ${node.attachment_note ? `<div class="detail-field"><label>Attachment (참조)</label><div class="value">${node.attachment_note}</div></div>` : ''}
+                ${node.etc ? `<div class="detail-field"><label>ETC</label><div class="value">${node.etc}</div></div>` : ''}
                 <div class="detail-field">
                     <label>Subsystem</label>
                     <div class="value">${node.subsystem || 'SS'}</div>
@@ -1098,13 +1121,18 @@
                     </select>
                 </div>
                 <div class="detail-field">
-                    <label>Verification Method</label>
-                    <select id="edit-verification">
-                        ${[['inspection','Inspection (검사)'],['analysis','Analysis (분석)'],['demonstration','Demonstration (시연)'],['test','Test (시험)']].map(([v,l]) =>
-                            `<option value="${v}" ${(node.verification || 'test') === v ? 'selected' : ''}>${l}</option>`
-                        ).join('')}
-                    </select>
+                    <label>Verification Methods (중복 가능)</label>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap;padding:6px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px">
+                        ${[['analysis','Analyze'],['inspection','Inspection'],['demonstration','Demonstration'],['test','Test']].map(([v,l]) => {
+                            const arr = Array.isArray(node.verification) ? node.verification : (node.verification ? [node.verification] : ['test']);
+                            return `<label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer"><input type="checkbox" id="edit-v-${v}" value="${v}" ${arr.includes(v) ? 'checked' : ''}> ${l}</label>`;
+                        }).join('')}
+                    </div>
                 </div>
+                <div class="detail-field"><label>Method</label><input id="edit-method" value="${node.method || ''}"></div>
+                <div class="detail-field"><label>FT_No</label><input id="edit-ft-no" value="${node.ft_no || ''}"></div>
+                <div class="detail-field"><label>Attachment (참조명)</label><input id="edit-attachment-note" value="${node.attachment_note || ''}"></div>
+                <div class="detail-field"><label>ETC</label><input id="edit-etc" value="${node.etc || ''}"></div>
                 <div class="detail-field">
                     <label>Subsystem</label>
                     <select id="edit-subsystem">
@@ -1121,13 +1149,23 @@
         }
 
         async function saveEdit() {
+            const verification = [];
+            ['analysis','inspection','demonstration','test'].forEach(v => {
+                const el = document.getElementById(`edit-v-${v}`);
+                if (el && el.checked) verification.push(v);
+            });
+
             const update = {
                 title: document.getElementById('edit-title').value,
                 content: document.getElementById('edit-content').value,
                 node_type: document.getElementById('edit-type').value,
                 priority: document.getElementById('edit-priority').value,
                 status: document.getElementById('edit-status').value,
-                verification: document.getElementById('edit-verification').value,
+                verification: verification.length ? verification : ['test'],
+                method: document.getElementById('edit-method').value,
+                ft_no: document.getElementById('edit-ft-no').value,
+                attachment_note: document.getElementById('edit-attachment-note').value,
+                etc: document.getElementById('edit-etc').value,
                 subsystem: document.getElementById('edit-subsystem').value,
             };
             await api(`/api/nodes/${selectedNodeId}`, {
@@ -1195,12 +1233,22 @@
 
         // ── Form Submissions ──
         async function submitNode() {
+            const verification = [];
+            ['analysis','inspection','demonstration','test'].forEach(v => {
+                if (document.getElementById(`node-v-${v}`).checked) verification.push(v);
+            });
+            if (verification.length === 0) verification.push('test');
+
             const data = {
                 title: document.getElementById('node-title').value,
                 content: document.getElementById('node-content').value,
                 node_type: document.getElementById('node-type').value,
                 priority: document.getElementById('node-priority').value,
-                verification: document.getElementById('node-verification').value,
+                verification: verification,
+                method: document.getElementById('node-method').value,
+                ft_no: document.getElementById('node-ft-no').value,
+                attachment_note: document.getElementById('node-attachment-note').value,
+                etc: document.getElementById('node-etc').value,
                 subsystem: document.getElementById('node-subsystem').value || 'SS',
                 author: document.getElementById('node-author').value,
             };
@@ -1413,6 +1461,9 @@
             test: 'Test (시험)',
         };
         function verificationLabel(v) {
+            if (Array.isArray(v)) {
+                return v.map(x => VERIF_LABELS[x] || x).join(', ') || 'Test (시험)';
+            }
             return VERIF_LABELS[v] || v || 'Test (시험)';
         }
 
@@ -1470,9 +1521,38 @@
             window.open('/api/report', '_blank');
         }
 
-        // ── Export ──
+        // ── Export / Import ──
         function exportCSV() {
             window.location.href = API + '/api/export/csv';
+        }
+
+        function downloadCSVTemplate() {
+            window.location.href = API + '/api/export/csv/template';
+        }
+
+        async function importCSV(input) {
+            if (!input.files.length) return;
+            const file = input.files[0];
+            if (!confirm(`Import nodes from "${file.name}"?\n\n- Only nodes will be added (no links)\n- All nodes get default Subsystem "SS" - you can change later\n- Existing IDs will be skipped`)) {
+                input.value = '';
+                return;
+            }
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetch(API + '/api/import/csv', { method: 'POST', body: formData });
+                const result = await res.json();
+                let msg = `CSV Import complete!\n\nAdded: ${result.added}\nSkipped (duplicate ID): ${result.skipped}\nTotal rows: ${result.total_rows}`;
+                if (result.errors && result.errors.length > 0) {
+                    msg += `\n\nErrors:\n${result.errors.slice(0,5).join('\n')}`;
+                }
+                alert(msg);
+                if (network) { network.destroy(); network = null; }
+                await refreshAll();
+            } catch(e) {
+                alert('Import failed: ' + e.message);
+            }
+            input.value = '';
         }
 
         function exportGraphPDF() {

@@ -54,7 +54,11 @@ class RequirementNode(BaseModel):
     node_type: NodeType = NodeType.REQUIREMENT
     priority: Priority = Priority.MEDIUM
     status: NodeStatus = NodeStatus.DRAFT
-    verification: str = "test"
+    verification: list[str] = Field(default_factory=lambda: ["test"])
+    method: str = ""
+    ft_no: str = ""
+    attachment_note: str = ""
+    etc: str = ""
     author: str = ""
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
@@ -79,7 +83,11 @@ class CreateNodeRequest(BaseModel):
     content: str
     node_type: NodeType = NodeType.REQUIREMENT
     priority: Priority = Priority.MEDIUM
-    verification: str = "test"
+    verification: list[str] = Field(default_factory=lambda: ["test"])
+    method: str = ""
+    ft_no: str = ""
+    attachment_note: str = ""
+    etc: str = ""
     author: str = ""
     tags: list[str] = Field(default_factory=list)
     subsystem: str = "SS"
@@ -91,7 +99,11 @@ class UpdateNodeRequest(BaseModel):
     node_type: Optional[NodeType] = None
     priority: Optional[Priority] = None
     status: Optional[NodeStatus] = None
-    verification: Optional[str] = None
+    verification: Optional[list[str]] = None
+    method: Optional[str] = None
+    ft_no: Optional[str] = None
+    attachment_note: Optional[str] = None
+    etc: Optional[str] = None
     tags: Optional[list[str]] = None
     subsystem: Optional[str] = None
 
