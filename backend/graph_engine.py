@@ -602,6 +602,7 @@ class GraphEngine:
         data = json.loads(filepath.read_text())
         self.graph.clear()
         for nid, ndata in data.get("nodes", {}).items():
+            self._migrate_node(ndata)
             self.graph.add_node(nid, **ndata)
         for edge in data.get("edges", []):
             src = edge.pop("source")
@@ -609,10 +610,37 @@ class GraphEngine:
             self.graph.add_edge(src, tgt, **edge)
             edge["source"] = src
             edge["target"] = tgt
+        # Migrate baselines too
+        for bname, snap in data.get("baselines", {}).items():
+            for nid, ndata in snap.get("nodes", {}).items():
+                self._migrate_node(ndata)
         self.baselines = data.get("baselines", {})
         self.subsystem_list = data.get("subsystem_list", list(DEFAULT_SUBSYSTEMS))
         self.change_history = data.get("change_history", [])
         return True
+
+    @staticmethod
+    def _migrate_node(ndata: dict):
+        """Migrate old-format node data to current format."""
+        # module → subsystem
+        if "module" in ndata and "subsystem" not in ndata:
+            ndata["subsystem"] = ndata.pop("module")
+        elif "module" in ndata:
+            ndata.pop("module", None)
+
+        # verification: string → list
+        v = ndata.get("verification")
+        if v is None:
+            ndata["verification"] = ["test"]
+        elif isinstance(v, str):
+            ndata["verification"] = [v] if v else ["test"]
+
+        # Ensure new fields exist with defaults
+        ndata.setdefault("method", "")
+        ndata.setdefault("ft_no", "")
+        ndata.setdefault("attachment_note", "")
+        ndata.setdefault("etc", "")
+        ndata.setdefault("attachments", [])
 
     def _save_baseline(self, name: str, snapshot: dict):
         filepath = DATA_DIR / f"{self.project_name}_baseline_{name}.json"

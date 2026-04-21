@@ -358,7 +358,9 @@ async def generate_report():
         html = f'<div style="margin-left:{indent}px;padding:4px 0;border-bottom:1px solid #eee">'
         html += f'<span style="background:{color};color:#fff;padding:1px 6px;border-radius:3px;font-size:11px">{nt[:3].upper()}</span> '
         html += f'<strong>{nid}</strong> - {node.get("title", "")}{suspect_mark}'
-        html += f' <small style="color:#888">({data.get("verification","test")} | {data.get("subsystem","SS")} | v{data.get("version",1)})</small>'
+        v_raw = data.get("verification", ["test"])
+        v_str = ", ".join(v_raw) if isinstance(v_raw, list) else str(v_raw)
+        html += f' <small style="color:#888">({v_str} | {data.get("subsystem","SS")} | v{data.get("version",1)})</small>'
         html += '</div>\n'
         for child in node.get("children", []):
             html += render_tree_html(child, level + 1)
