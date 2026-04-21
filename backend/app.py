@@ -359,13 +359,38 @@ async def generate_report():
         attachments = n.get("attachments", [])
         attach_html = ""
         if attachments:
-            attach_html = '<div style="margin-top:8px"><strong>Attachments (근거자료):</strong><ul style="margin:4px 0">'
+            attach_html = '<div style="margin-top:8px;page-break-inside:avoid"><strong>Attachments (근거자료):</strong>'
             for a in attachments:
-                attach_html += f'<li><a href="/api/attachments/{a["stored_name"]}" target="_blank">{a["filename"]}</a>'
-                if a.get("description"):
-                    attach_html += f' - <em>{a["description"]}</em>'
-                attach_html += f' <small>({a.get("size",0)//1024}KB, {a.get("uploaded_at","")[:10]})</small></li>'
-            attach_html += '</ul></div>'
+                fname = a.get("filename", "")
+                ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else ""
+                desc = a.get("description", "")
+                size_kb = a.get("size", 0) / 1024
+                date = a.get("uploaded_at", "")[:10]
+                stored = a.get("stored_name", "")
+
+                attach_html += '<div style="margin:8px 0;padding:8px;border:1px solid #e0e0e0;border-radius:4px">'
+                attach_html += f'<div style="font-size:13px"><strong>{fname}</strong>'
+                if desc:
+                    attach_html += f' &mdash; {desc}'
+                attach_html += f' <small style="color:#888">({size_kb:.1f}KB, {date})</small></div>'
+
+                if ext in ("png", "jpg", "jpeg", "gif", "bmp", "webp", "svg"):
+                    attach_html += f'<img src="/api/attachments/{stored}" style="max-width:100%;max-height:400px;margin-top:6px;border:1px solid #ddd;border-radius:4px" alt="{fname}">'
+                elif ext == "pdf":
+                    attach_html += f'<div style="margin-top:4px;font-size:12px;color:#4A90D9"><a href="/api/attachments/{stored}" target="_blank">PDF 열기</a></div>'
+                elif ext in ("txt", "csv", "log", "md"):
+                    txt_path = UPLOAD_DIR / stored
+                    if txt_path.exists():
+                        try:
+                            txt = txt_path.read_text(encoding="utf-8")[:2000]
+                            attach_html += f'<pre style="margin-top:6px;padding:8px;background:#f8f8f8;border:1px solid #e0e0e0;border-radius:4px;font-size:12px;white-space:pre-wrap;max-height:200px;overflow-y:auto">{txt}</pre>'
+                        except Exception:
+                            pass
+                else:
+                    attach_html += f'<div style="margin-top:4px;font-size:12px;color:#888"><a href="/api/attachments/{stored}" target="_blank">Download</a></div>'
+
+                attach_html += '</div>'
+            attach_html += '</div>'
 
         # Version history
         vh = n.get("version_history", [])
