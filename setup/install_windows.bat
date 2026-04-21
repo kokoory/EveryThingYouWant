@@ -1,40 +1,64 @@
 @echo off
 chcp 65001 > nul
-setlocal
+setlocal enabledelayedexpansion
 
 echo ====================================================
 echo   Requirements Graph Manager - Windows Setup
-echo   (Python 3.12)
+echo   REQUIRES Python 3.12
 echo ====================================================
 echo.
 
-REM Check Python
-python --version 2>nul
-if errorlevel 1 (
-    echo [ERROR] Python is not installed or not in PATH.
-    echo Please install Python 3.12 from https://www.python.org/downloads/
-    pause
-    exit /b 1
+REM ── Find Python 3.12 ──
+
+REM Try 'py -3.12' launcher first (recommended Windows Python launcher)
+set PYCMD=
+py -3.12 --version >nul 2>&1
+if not errorlevel 1 (
+    set PYCMD=py -3.12
+    goto :pyfound
 )
 
-REM Check Python version is 3.12
-for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PYVER=%%v
-echo Detected Python: %PYVER%
-echo %PYVER% | findstr "3.12" > nul
-if errorlevel 1 (
-    echo [WARNING] Python 3.12 is recommended. Current: %PYVER%
-    choice /C YN /M "Continue anyway?"
-    if errorlevel 2 exit /b 1
+REM Try 'python' and check version
+python --version >nul 2>&1
+if not errorlevel 1 (
+    for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PYVER=%%v
+    echo !PYVER! | findstr "3.12" >nul
+    if not errorlevel 1 (
+        set PYCMD=python
+        goto :pyfound
+    )
 )
 
-REM Move to project root
+REM Try 'python3.12'
+python3.12 --version >nul 2>&1
+if not errorlevel 1 (
+    set PYCMD=python3.12
+    goto :pyfound
+)
+
+REM Not found
+echo [ERROR] Python 3.12 was not found.
+echo.
+echo Please install Python 3.12 from:
+echo   https://www.python.org/downloads/release/python-3127/
+echo.
+echo During installation, make sure to check:
+echo   [x] Add python.exe to PATH
+echo.
+pause
+exit /b 1
+
+:pyfound
+for /f "tokens=*" %%v in ('%PYCMD% --version 2^>^&1') do echo Detected: %%v
+
+REM ── Move to project root ──
 cd /d "%~dp0\.."
 
-REM Create virtual environment
+REM ── Create virtual environment ──
 if not exist venv (
     echo.
     echo [1/3] Creating virtual environment...
-    python -m venv venv
+    %PYCMD% -m venv venv
     if errorlevel 1 (
         echo [ERROR] Failed to create virtual environment.
         pause
@@ -44,33 +68,34 @@ if not exist venv (
     echo [1/3] Virtual environment already exists. Skipping.
 )
 
-REM Activate venv
+REM ── Activate ──
 echo.
 echo [2/3] Activating virtual environment...
 call venv\Scripts\activate.bat
 
-REM Install dependencies
+REM ── Install from offline wheels ──
 echo.
 echo [3/3] Installing dependencies...
 
-REM Try offline first using bundled wheels
 if exist setup\wheels\windows (
     echo Using offline wheel cache...
     python -m pip install --no-index --find-links=setup\wheels\windows -r setup\requirements.txt
     if errorlevel 1 (
-        echo [WARNING] Offline install failed, trying online...
-        python -m pip install --upgrade pip
-        python -m pip install -r setup\requirements.txt
+        echo.
+        echo [ERROR] Offline install failed.
+        echo Please check that Python 3.12 is being used.
+        echo Bundled wheels are for Python 3.12 only.
+        pause
+        exit /b 1
     )
 ) else (
-    python -m pip install --upgrade pip
+    echo No offline wheels found, installing from internet...
     python -m pip install -r setup\requirements.txt
-)
-
-if errorlevel 1 (
-    echo [ERROR] Failed to install dependencies.
-    pause
-    exit /b 1
+    if errorlevel 1 (
+        echo [ERROR] Online install failed.
+        pause
+        exit /b 1
+    )
 )
 
 echo.

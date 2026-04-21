@@ -3,11 +3,11 @@ set -e
 
 echo "===================================================="
 echo "  Requirements Graph Manager - Unix Setup"
-echo "  (Python 3.12)"
+echo "  REQUIRES Python 3.12"
 echo "===================================================="
 echo
 
-# Check Python 3.12
+# ── Find Python 3.12 ──
 PYTHON_BIN=""
 for cmd in python3.12 python3 python; do
     if command -v "$cmd" &> /dev/null; then
@@ -20,21 +20,29 @@ for cmd in python3.12 python3 python; do
 done
 
 if [ -z "$PYTHON_BIN" ]; then
-    echo "[WARNING] Python 3.12 not found. Trying default python3..."
-    if ! command -v python3 &> /dev/null; then
-        echo "[ERROR] Python 3 is not installed."
-        echo "Install Python 3.12: https://www.python.org/downloads/"
-        exit 1
-    fi
-    PYTHON_BIN="python3"
+    echo "[ERROR] Python 3.12 was not found on this system."
+    echo
+    echo "Install Python 3.12:"
+    echo "  macOS:         brew install python@3.12"
+    echo "  Ubuntu/Debian: sudo apt install python3.12 python3.12-venv"
+    echo "  Or download:   https://www.python.org/downloads/release/python-3127/"
+    exit 1
 fi
 
 echo "Using: $PYTHON_BIN ($("$PYTHON_BIN" --version))"
 
-# Move to project root
+# ── Detect platform ──
+PLATFORM=""
+case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64)   PLATFORM="linux" ;;
+    Darwin-arm64)   PLATFORM="macos_arm64" ;;
+    Darwin-x86_64)  PLATFORM="macos_intel" ;;
+esac
+
+# ── Move to project root ──
 cd "$(dirname "$0")/.."
 
-# Create virtual environment
+# ── Create virtual environment ──
 if [ ! -d venv ]; then
     echo
     echo "[1/3] Creating virtual environment..."
@@ -43,33 +51,26 @@ else
     echo "[1/3] Virtual environment already exists. Skipping."
 fi
 
-# Activate
+# ── Activate ──
 echo
 echo "[2/3] Activating virtual environment..."
 # shellcheck disable=SC1091
 source venv/bin/activate
 
-# Detect platform for offline wheels
-PLATFORM=""
-case "$(uname -s)-$(uname -m)" in
-    Linux-x86_64) PLATFORM="linux" ;;
-    Darwin-arm64) PLATFORM="macos_arm64" ;;
-    Darwin-x86_64) PLATFORM="macos_intel" ;;
-esac
-
-# Install
+# ── Install from offline wheels ──
 echo
 echo "[3/3] Installing dependencies..."
 
 if [ -n "$PLATFORM" ] && [ -d "setup/wheels/$PLATFORM" ]; then
     echo "Using offline wheel cache: setup/wheels/$PLATFORM"
     if ! python -m pip install --no-index --find-links="setup/wheels/$PLATFORM" -r setup/requirements.txt; then
-        echo "[WARNING] Offline install failed, trying online..."
-        python -m pip install --upgrade pip
-        python -m pip install -r setup/requirements.txt
+        echo
+        echo "[ERROR] Offline install failed."
+        echo "Bundled wheels are for Python 3.12 only."
+        exit 1
     fi
 else
-    python -m pip install --upgrade pip
+    echo "No offline wheels found, installing from internet..."
     python -m pip install -r setup/requirements.txt
 fi
 
