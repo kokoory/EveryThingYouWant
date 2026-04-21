@@ -62,6 +62,9 @@ async def serve_frontend():
     return index_path.read_text(encoding="utf-8")
 
 
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+
+
 # ── Node Endpoints ──
 
 @app.get("/api/nodes")
