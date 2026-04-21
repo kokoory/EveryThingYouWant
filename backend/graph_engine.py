@@ -363,29 +363,32 @@ class GraphEngine:
             roots = list(self.graph.nodes)[:1]
 
         tree = []
-        visited = set()
         for root in roots:
-            tree.append(self._build_subtree(root, visited))
+            # Use per-root path tracking (cycle detection), not global visited
+            tree.append(self._build_subtree(root, set()))
         return tree
 
-    def _build_subtree(self, node_id: str, visited: set) -> dict:
-        if node_id in visited:
-            return {"id": node_id, "label": "(circular ref)", "children": []}
-        visited.add(node_id)
+    def _build_subtree(self, node_id: str, path: set) -> dict:
         data = self.graph.nodes.get(node_id, {})
-        children = []
-        for _, child in self.graph.out_edges(node_id):
-            children.append(self._build_subtree(child, visited))
-        return {
+        base = {
             "id": node_id,
             "title": data.get("title", node_id),
-            "node_type": data.get("node_type", "unknown"),
-            "status": data.get("status", "unknown"),
+            "node_type": data.get("node_type", "requirement"),
+            "status": data.get("status", "draft"),
             "priority": data.get("priority", "medium"),
-            "verification": data.get("verification", "test"),
+            "verification": data.get("verification", ["test"]),
             "subsystem": data.get("subsystem", "SS"),
-            "children": children,
         }
+
+        # Cycle detection on this path only
+        if node_id in path:
+            return {**base, "title": base["title"] + " (↺ cycle)", "children": []}
+
+        new_path = path | {node_id}
+        children = []
+        for _, child in self.graph.out_edges(node_id):
+            children.append(self._build_subtree(child, new_path))
+        return {**base, "children": children}
 
     # ── Subsystem Operations ──
 
