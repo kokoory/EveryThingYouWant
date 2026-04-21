@@ -1006,8 +1006,11 @@
                     <label>Incoming Links (${links.incoming.length})</label>
                     ${links.incoming.map(l => `
                         <div class="link-item ${l.is_suspect ? 'suspect' : ''}">
-                            <span onclick="selectNode('${l.source_id}')" style="cursor:pointer;text-decoration:underline">${l.source_id}</span>
-                            <small>${l.link_type} ${l.is_suspect ? '⚠' : ''}</small>
+                            <div>
+                                <span onclick="selectNode('${l.source_id}')" style="cursor:pointer;text-decoration:underline">${l.source_id}</span>
+                                <small style="color:var(--text-secondary)">${l.link_type} ${l.is_suspect ? '⚠' : ''}</small>
+                            </div>
+                            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteLink('${l.source_id}','${nodeId}')">X</button>
                         </div>
                     `).join('') || '<div style="color:var(--text-secondary);font-size:12px">None</div>'}
                 </div>
@@ -1015,8 +1018,11 @@
                     <label>Outgoing Links (${links.outgoing.length})</label>
                     ${links.outgoing.map(l => `
                         <div class="link-item ${l.is_suspect ? 'suspect' : ''}">
-                            <span onclick="selectNode('${l.target_id}')" style="cursor:pointer;text-decoration:underline">${l.target_id}</span>
-                            <small>${l.link_type} ${l.is_suspect ? '⚠' : ''}</small>
+                            <div>
+                                <span onclick="selectNode('${l.target_id}')" style="cursor:pointer;text-decoration:underline">${l.target_id}</span>
+                                <small style="color:var(--text-secondary)">${l.link_type} ${l.is_suspect ? '⚠' : ''}</small>
+                            </div>
+                            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteLink('${nodeId}','${l.target_id}')">X</button>
                         </div>
                     `).join('') || '<div style="color:var(--text-secondary);font-size:12px">None</div>'}
                 </div>
@@ -1478,6 +1484,13 @@
             await fetch(`/api/nodes/${nodeId}/attachments`, { method: 'POST', body: formData });
             await refreshTable();
             selectNode(nodeId);
+        }
+
+        async function deleteLink(sourceId, targetId) {
+            if (!confirm(`Delete link: ${sourceId} → ${targetId}?`)) return;
+            await api(`/api/links/${encodeURIComponent(sourceId)}/${encodeURIComponent(targetId)}`, { method: 'DELETE' });
+            await refreshAll();
+            if (selectedNodeId) selectNode(selectedNodeId);
         }
 
         async function deleteAttachment(nodeId, fileId) {
