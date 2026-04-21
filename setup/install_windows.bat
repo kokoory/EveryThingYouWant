@@ -20,12 +20,11 @@ if errorlevel 1 (
 REM Check Python version is 3.12
 for /f "tokens=2" %%v in ('python --version 2^>^&1') do set PYVER=%%v
 echo Detected Python: %PYVER%
-echo %PYVER% | findstr /B "3.12" > nul
+echo %PYVER% | findstr "3.12" > nul
 if errorlevel 1 (
     echo [WARNING] Python 3.12 is recommended. Current: %PYVER%
-    echo Continue anyway? (Y/N)
-    set /p CONT=
-    if /i not "%CONT%"=="Y" exit /b 1
+    choice /C YN /M "Continue anyway?"
+    if errorlevel 2 exit /b 1
 )
 
 REM Move to project root
