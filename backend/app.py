@@ -21,6 +21,7 @@ from .models import (
     BaselineRequest,
     CreateLinkRequest,
     CreateNodeRequest,
+    SubsystemColorRequest,
     SubsystemRequest,
     UpdateNodeRequest,
 )
@@ -622,10 +623,18 @@ async def get_subsystems():
 
 @app.post("/api/subsystems")
 async def add_subsystem(req: SubsystemRequest):
-    if engine.add_subsystem(req.name):
+    if engine.add_subsystem(req.name, req.color):
         engine.save()
         return {"status": "added", "name": req.name.strip().upper(), "subsystems": engine.get_subsystems()}
     raise HTTPException(status_code=400, detail=f"Subsystem '{req.name}' already exists or is invalid")
+
+
+@app.put("/api/subsystems/{name}/color")
+async def set_subsystem_color(name: str, req: SubsystemColorRequest):
+    if engine.set_subsystem_color(name, req.color):
+        engine.save()
+        return {"status": "updated", "name": name, "color": req.color}
+    raise HTTPException(status_code=404, detail="Subsystem not found")
 
 
 @app.delete("/api/subsystems/{name}")

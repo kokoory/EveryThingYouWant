@@ -40,6 +40,9 @@ class GraphEngine:
         self.baselines: dict[str, dict] = {}
         self.change_history: list[dict] = []
         self.subsystem_list: list[str] = list(DEFAULT_SUBSYSTEMS)
+        self.subsystem_colors: dict[str, str] = {
+            "SS": "#E67E22", "GCS": "#3498DB", "DLS": "#2ECC71", "AVS": "#E74C3C",
+        }
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # ── Node Operations ──
@@ -392,24 +395,46 @@ class GraphEngine:
 
     # ── Subsystem Operations ──
 
-    def get_subsystems(self) -> list[str]:
+    _AUTO_COLORS = [
+        "#E67E22", "#3498DB", "#2ECC71", "#E74C3C", "#9B59B6",
+        "#1ABC9C", "#F1C40F", "#34495E", "#E91E63", "#00BCD4",
+        "#795548", "#607D8B", "#FF5722", "#8BC34A", "#673AB7",
+    ]
+
+    def get_subsystems(self) -> list[dict]:
+        return [{"name": s, "color": self.subsystem_colors.get(s, "#888888")} for s in self.subsystem_list]
+
+    def get_subsystem_names(self) -> list[str]:
         return list(self.subsystem_list)
 
-    def add_subsystem(self, name: str) -> bool:
+    def get_subsystem_color(self, name: str) -> str:
+        return self.subsystem_colors.get(name, "#888888")
+
+    def set_subsystem_color(self, name: str, color: str) -> bool:
+        if name not in self.subsystem_list:
+            return False
+        self.subsystem_colors[name] = color
+        return True
+
+    def add_subsystem(self, name: str, color: str = "") -> bool:
         name = name.strip().upper()
         if not name or name in self.subsystem_list:
             return False
         self.subsystem_list.append(name)
+        if not color:
+            idx = len(self.subsystem_list) - 1
+            color = self._AUTO_COLORS[idx % len(self._AUTO_COLORS)]
+        self.subsystem_colors[name] = color
         return True
 
     def delete_subsystem(self, name: str) -> dict:
         if name not in self.subsystem_list:
             return {"success": False, "error": "Subsystem not found"}
-        # Check if any node uses this subsystem
         in_use = [nid for nid, data in self.graph.nodes(data=True) if data.get("subsystem") == name]
         if in_use:
             return {"success": False, "error": f"Subsystem '{name}' is used by {len(in_use)} node(s): {', '.join(in_use[:5])}"}
         self.subsystem_list.remove(name)
+        self.subsystem_colors.pop(name, None)
         return {"success": True}
 
     def get_used_subsystems(self) -> list[str]:
@@ -591,6 +616,7 @@ class GraphEngine:
             ],
             "baselines": self.baselines,
             "subsystem_list": self.subsystem_list,
+            "subsystem_colors": self.subsystem_colors,
             "change_history": self.change_history[-100:],
         }
         filepath.write_text(json.dumps(data, default=str, ensure_ascii=False, indent=2))
@@ -616,6 +642,12 @@ class GraphEngine:
                 self._migrate_node(ndata)
         self.baselines = data.get("baselines", {})
         self.subsystem_list = data.get("subsystem_list", list(DEFAULT_SUBSYSTEMS))
+        saved_colors = data.get("subsystem_colors", {})
+        # Ensure all subsystems have a color
+        for i, s in enumerate(self.subsystem_list):
+            if s not in saved_colors:
+                saved_colors[s] = self._AUTO_COLORS[i % len(self._AUTO_COLORS)]
+        self.subsystem_colors = saved_colors
         self.change_history = data.get("change_history", [])
         return True
 
@@ -659,37 +691,47 @@ class GraphEngine:
 
     def to_vis_data(self) -> dict:
         """Export graph data in a format suitable for frontend visualization."""
+        type_shapes = {
+            "requirement": "box",
+            "specification": "box",
+            "test_case": "diamond",
+            "design": "ellipse",
+            "risk": "triangle",
+        }
+        status_border = {
+            "suspect": "#FF0000",
+            "approved": "#27AE60",
+            "draft": "#95A5A6",
+            "review": "#F1C40F",
+        }
+
         nodes = []
         for nid, data in self.graph.nodes(data=True):
-            color_map = {
-                "requirement": "#4A90D9",
-                "specification": "#7B68EE",
-                "test_case": "#2ECC71",
-                "design": "#F39C12",
-                "risk": "#E74C3C",
-            }
-            status_border = {
-                "suspect": "#FF0000",
-                "approved": "#27AE60",
-                "draft": "#95A5A6",
-                "review": "#F1C40F",
-            }
             nt = data.get("node_type", "requirement")
             st = data.get("status", "draft")
+            sub = data.get("subsystem", "SS")
+            bg_color = self.subsystem_colors.get(sub, "#888888")
             nodes.append({
                 "id": nid,
-                "label": f"{nid}\n{data.get('title', '')}",
-                "title": f"Type: {nt}\nStatus: {st}\nPriority: {data.get('priority', 'medium')}\n\n{data.get('content', '')}",
+                "label": f"[{sub}] {nid}\n{data.get('title', '')}",
+                "title": f"Subsystem: {sub}\nType: {nt}\nStatus: {st}\nPriority: {data.get('priority', 'medium')}\n\n{data.get('content', '')}",
                 "color": {
-                    "background": color_map.get(nt, "#4A90D9"),
+                    "background": bg_color,
                     "border": status_border.get(st, "#95A5A6"),
                 },
                 "borderWidth": 3 if st == "suspect" else 1,
-                "shape": "box",
+                "shape": type_shapes.get(nt, "box"),
                 "font": {"color": "#FFFFFF", "size": 12},
                 "node_type": nt,
                 "status": st,
+                "subsystem": sub,
             })
+
+        # Legend data for frontend
+        legend = {
+            "subsystems": {s: self.subsystem_colors.get(s, "#888") for s in self.subsystem_list},
+            "types": type_shapes,
+        }
 
         edges = []
         for src, tgt, data in self.graph.edges(data=True):
@@ -705,4 +747,4 @@ class GraphEngine:
                 "title": f"{'⚠ SUSPECT' if is_suspect else ''} {data.get('description', '')}".strip(),
             })
 
-        return {"nodes": nodes, "edges": edges}
+        return {"nodes": nodes, "edges": edges, "legend": legend}

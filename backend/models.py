@@ -117,6 +117,11 @@ class CreateLinkRequest(BaseModel):
 
 class SubsystemRequest(BaseModel):
     name: str
+    color: str = ""
+
+
+class SubsystemColorRequest(BaseModel):
+    color: str
 
 
 class BaselineRequest(BaseModel):
