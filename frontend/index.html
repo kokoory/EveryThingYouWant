@@ -516,6 +516,14 @@
         </div>
     </div>
 
+    <!-- Link Mode Bar -->
+    <div id="link-mode-bar" style="display:none;background:#2C3E50;padding:8px 24px;align-items:center;gap:12px;border-top:2px solid var(--accent);flex-shrink:0">
+        <span style="color:var(--warning);font-weight:600">LINK MODE</span>
+        <span>Source: <strong id="link-mode-source"></strong></span>
+        <span style="color:var(--text-secondary)">Click a target node in the graph to create a link</span>
+        <button class="btn btn-sm" onclick="cancelLinkMode()" style="margin-left:auto">Cancel (Esc)</button>
+    </div>
+
     <!-- Stats Bar -->
     <div class="stats-bar">
         <div class="stat">Nodes: <span class="stat-value" id="stat-nodes">0</span></div>
@@ -709,6 +717,8 @@
         let allNodes = [];
         let selectedNodeId = null;
         let currentSidebar = 'tree';
+        let linkMode = false;
+        let linkModeSource = null;
 
         // ── API Helpers ──
         async function api(path, options = {}) {
@@ -803,7 +813,15 @@
 
                 network.on('click', (params) => {
                     if (params.nodes.length > 0) {
-                        selectNode(params.nodes[0]);
+                        const clickedId = params.nodes[0];
+                        if (linkMode && linkModeSource && linkModeSource !== clickedId) {
+                            // Second node selected -> create link
+                            finishLinkMode(clickedId);
+                        } else {
+                            selectNode(clickedId);
+                        }
+                    } else if (linkMode) {
+                        cancelLinkMode();
                     }
                 });
 
@@ -1061,6 +1079,7 @@
                             <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteLink('${nodeId}','${l.target_id}')">X</button>
                         </div>
                     `).join('') || '<div style="color:var(--text-secondary);font-size:12px">None</div>'}
+                    <button class="btn btn-sm btn-primary" onclick="startLinkMode()" style="margin-top:6px">+ Link from this node</button>
                 </div>
                 <div class="detail-field">
                     <label>Attachments (근거자료)</label>
@@ -1549,6 +1568,69 @@
             selectNode(nodeId);
         }
 
+        // ── Graph Link Mode ──
+        function startLinkMode() {
+            if (!selectedNodeId) return alert('Select a source node first.');
+            linkMode = true;
+            linkModeSource = selectedNodeId;
+            document.getElementById('link-mode-bar').style.display = 'flex';
+            document.getElementById('link-mode-source').textContent = linkModeSource;
+            if (network) network.selectNodes([linkModeSource]);
+        }
+
+        function cancelLinkMode() {
+            linkMode = false;
+            linkModeSource = null;
+            document.getElementById('link-mode-bar').style.display = 'none';
+        }
+
+        async function finishLinkMode(targetId) {
+            const sourceId = linkModeSource;
+            cancelLinkMode();
+
+            const linkType = await showLinkTypeDialog();
+            if (!linkType) return;
+
+            await api('/api/links', {
+                method: 'POST',
+                body: JSON.stringify({ source_id: sourceId, target_id: targetId, link_type: linkType }),
+            });
+            if (network) { network.destroy(); network = null; }
+            await refreshAll();
+            selectNode(sourceId);
+        }
+
+        function showLinkTypeDialog() {
+            return new Promise((resolve) => {
+                const types = [
+                    ['derives_from', 'Derives From'],
+                    ['satisfies', 'Satisfies'],
+                    ['verified_by', 'Verified By'],
+                    ['traces_to', 'Traces To'],
+                    ['mitigated_by', 'Mitigated By'],
+                ];
+                const html = types.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+                const overlay = document.createElement('div');
+                overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center';
+                overlay.innerHTML = `
+                    <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:20px;width:320px">
+                        <div style="font-weight:600;margin-bottom:12px">Link Type</div>
+                        <select id="quick-link-type" style="width:100%;padding:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);font-size:13px">${html}</select>
+                        <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+                            <button class="btn" id="quick-link-cancel">Cancel</button>
+                            <button class="btn btn-primary" id="quick-link-ok">Create</button>
+                        </div>
+                    </div>`;
+                document.body.appendChild(overlay);
+                overlay.querySelector('#quick-link-cancel').onclick = () => { overlay.remove(); resolve(null); };
+                overlay.querySelector('#quick-link-ok').onclick = () => {
+                    const val = overlay.querySelector('#quick-link-type').value;
+                    overlay.remove();
+                    resolve(val);
+                };
+            });
+        }
+
         // ── Backup & Restore ──
         function downloadBackup() {
             window.location.href = API + '/api/backup';
@@ -1650,6 +1732,11 @@
             `);
             printWin.document.close();
         }
+
+        // ── Keyboard ──
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && linkMode) cancelLinkMode();
+        });
 
         // ── Start ──
         init();
